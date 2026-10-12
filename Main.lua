@@ -1,8 +1,7 @@
 --[[ Oc1DvHUB × MOURGE SHIFT HALLOWEEN EDITION — FINAL
      UI: Custom Oc1DvHUB
      Tabs: RUMAH, COLLECT, ESP, TELEPORT, EVENT, MISC, TEMA, CREDITS
-     Effects: Halloween Particles + Glow + Animated Title
-     Update: Title changed, icons removed, Noclip added, Notifications added
+     Update: Auto Scan Item + Multi Method Collect + Title Colors
 ]]
 print("[Oc1DvHUB] Loading Halloween Edition FINAL...")
 
@@ -111,31 +110,31 @@ end
 local State = {
     AutoCollect = true,
     AutoTP = true,
-    CollectInterval = 3,
+    CollectInterval = 1,
     MaxDistance = 500,
     ItemKeyword = "TrickOrTreatItem",
-    TPSettleDelay = 0.5,
-    CollectDelay = 0.3,
-    MaxPerCycle = 3,
-    
+    TPSettleDelay = 0.3,
+    CollectDelay = 0.2,
+    MaxPerCycle = 5,
+
     ItemESP = true,
     ReaperESP = true,
     GhostESP = false,
     ShowDistance = true,
-    
+
     FirePrompt = true,
     NoDelay = true,
-    
+
     AntiAFK = true,
     AntiAFKInterval = 60,
-    
+
     GodMode = false,
     DesyncRadius = 30,
     DesyncTPDistance = 500,
-    
+
     Invisible = false,
-    Noclip = false,  -- Noclip ditambahkan
-    
+    Noclip = false,
+
     WalkSpeedEnabled = false,
     WalkSpeedValue = 16,
 }
@@ -198,8 +197,8 @@ local TP_LOCATIONS = {
 -- ═══════════════════════════════════════════════════════════
 local function getHRP()
     local c = LP.Character
-    return c and (c:FindFirstChild("HumanoidRootPart") 
-                or c:FindFirstChild("Torso") 
+    return c and (c:FindFirstChild("HumanoidRootPart")
+                or c:FindFirstChild("Torso")
                 or c:FindFirstChild("UpperTorso"))
 end
 
@@ -270,15 +269,79 @@ task.spawn(function()
     end
 end)
 
--- SCANNERS
+-- ═══════════════════════════════════════════════════════════
+-- AUTO SCAN ITEM (Multi Keyword + Multi Type)
+-- ═══════════════════════════════════════════════════════════
+local ITEM_KEYWORDS = {
+    "trickortreatitem", "trickortreat", "trick_or_treat",
+    "trick", "treat", "candy", "candies", "sweet",
+    "halloweenitem", "eventitem", "collectitem", "pickupitem",
+    "trickortreatltem",
+}
+
+local ITEM_BLACKLIST = {
+    "prompt", "ui", "gui", "shop", "sign", "spawner",
+    "spawn", "effect", "sound", "particle", "highlight",
+    "button", "text", "label", "screen", "folder",
+}
+
+local function isItemBlacklisted(name)
+    local low = name:lower()
+    for _, bl in ipairs(ITEM_BLACKLIST) do
+        if low:find(bl, 1, true) then return true end
+    end
+    return false
+end
+
+local function isItemName(name)
+    local low = name:lower()
+    for _, kw in ipairs(ITEM_KEYWORDS) do
+        if low:find(kw, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
 local function scanItems()
     local found = {}
+    local seen = {}
     pcall(function()
         for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("BasePart") or obj:IsA("Model") then
-                if hasKeyword(obj.Name, State.ItemKeyword) then
-                    local part = getPart(obj)
-                    if part then table.insert(found, {model = obj, part = part}) end
+            if seen[obj] then continue end
+            if isItemBlacklisted(obj.Name) then continue end
+
+            if isItemName(obj.Name) then
+                local part = nil
+                if obj:IsA("BasePart") then
+                    part = obj
+                elseif obj:IsA("Model") then
+                    part = obj.PrimaryPart
+                        or obj:FindFirstChildWhichIsA("BasePart")
+                        or obj:FindFirstChild("HumanoidRootPart", true)
+                elseif obj:IsA("Tool") then
+                    part = obj:FindFirstChildWhichIsA("BasePart")
+                    if not part and obj.Parent and obj.Parent:IsA("Backpack") then
+                        continue
+                    end
+                elseif obj:IsA("Folder") then
+                    part = obj:FindFirstChildWhichIsA("BasePart", true)
+                    if part then
+                        local model = part:FindFirstAncestorOfClass("Model") or obj
+                        if not seen[model] then
+                            seen[model] = true
+                            table.insert(found, {model = model, part = part, source = obj.Name})
+                        end
+                        continue
+                    end
+                end
+
+                if part and part.Parent then
+                    local root = part:FindFirstAncestorOfClass("Model") or obj
+                    if not seen[root] then
+                        seen[root] = true
+                        table.insert(found, {model = root, part = part, source = obj.Name})
+                    end
                 end
             end
         end
@@ -292,7 +355,7 @@ local function scanReapers()
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("Model") then
                 local n = obj.Name:lower()
-                if (n:find("reaper") or n:find("death") or n:find("grim")) 
+                if (n:find("reaper") or n:find("death") or n:find("grim"))
                    and not Players:GetPlayerFromCharacter(obj) then
                     local part = getPart(obj)
                     if part then table.insert(found, {model = obj, part = part}) end
@@ -323,10 +386,10 @@ end
 local function isGhostName(name)
     local low = name:lower()
     for _, kw in ipairs(GHOST_KEYWORDS) do
-        if low == kw 
-           or low:find("^" .. kw .. "_") 
-           or low:find("^" .. kw .. " ") 
-           or low:find(" " .. kw .. " ") 
+        if low == kw
+           or low:find("^" .. kw .. "_")
+           or low:find("^" .. kw .. " ")
+           or low:find(" " .. kw .. " ")
            or low:find(" " .. kw .. "$")
            or low:find("^" .. kw .. "$") then
             return true
@@ -459,30 +522,74 @@ task.spawn(function()
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════
+-- AUTO COLLECT ITEM (Multi Method)
+-- ═══════════════════════════════════════════════════════════
 local function collectItem(data)
     if not data or not data.part or not data.part.Parent then return false end
     local part = data.part
     local model = data.model
+    local success = false
+
+    -- Method 1: ProximityPrompt
     local prompt = model:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if not prompt and part then prompt = part:FindFirstChildWhichIsA("ProximityPrompt") end
-    if not prompt then
-        local hrp = getHRP()
-        if hrp and firetouchinterest then
+    if not prompt and part then
+        prompt = part:FindFirstChildWhichIsA("ProximityPrompt")
+    end
+    if prompt then
+        pcall(function()
+            prompt.MaxActivationDistance = 9e9
+            prompt.Enabled = true
+            if State.NoDelay then prompt.HoldDuration = 0 end
+        end)
+        if State.FirePrompt then
             pcall(function()
-                firetouchinterest(hrp, part, 0)
-                task.wait(0.01)
-                firetouchinterest(hrp, part, 1)
+                fireproximityprompt(prompt, 0)
+                success = true
             end)
         end
-        return false
     end
-    pcall(function()
-        prompt.MaxActivationDistance = 9e9
-        prompt.Enabled = true
-        if State.NoDelay then prompt.HoldDuration = 0 end
-    end)
-    if not State.FirePrompt then return false end
-    return firePrompt(prompt)
+
+    -- Method 2: ClickDetector
+    local cd = model:FindFirstChildWhichIsA("ClickDetector", true)
+    if not cd and part then
+        cd = part:FindFirstChildWhichIsA("ClickDetector")
+    end
+    if cd and fireclickdetector then
+        pcall(function()
+            fireclickdetector(cd)
+            success = true
+        end)
+    end
+
+    -- Method 3: firetouchinterest
+    local hrp = getHRP()
+    if hrp and firetouchinterest then
+        pcall(function()
+            firetouchinterest(hrp, part, 0)
+            task.wait(0.02)
+            firetouchinterest(hrp, part, 1)
+            success = true
+        end)
+    end
+
+    -- Method 4: RemoteEvent auto-detect
+    if not success then
+        pcall(function()
+            for _, obj in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                    local n = obj.Name:lower()
+                    if n:find("collect") or n:find("pickup") or n:find("trick") or n:find("treat") then
+                        pcall(function() obj:FireServer(part) end)
+                        pcall(function() obj:InvokeServer(part) end)
+                        success = true
+                    end
+                end
+            end
+        end)
+    end
+
+    return success
 end
 
 -- ESP
@@ -617,7 +724,7 @@ task.spawn(function()
     while true do
         task.wait(0.5)
         local items = scanItems()
-        
+
         if State.ItemESP then
             local cur = {}
             for _, d in ipairs(items) do cur[d.model] = d end
@@ -638,7 +745,7 @@ task.spawn(function()
             for m, _ in pairs(itemCache) do removeESP(m) end
             itemCache = {}
         end
-        
+
         if State.ReaperESP then
             local rs = scanReapers()
             StatsData.ReapersFound = #rs
@@ -662,7 +769,7 @@ task.spawn(function()
             reaperCache = {}
             StatsData.ReapersFound = 0
         end
-        
+
         if State.GhostESP then
             local gs = scanGhosts()
             StatsData.GhostsFound = #gs
@@ -773,7 +880,7 @@ NotifyLayout.SortOrder = Enum.SortOrder.LayoutOrder
 NotifyLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 NotifyLayout.Padding = UDim.new(0, 6)
 
-local function NotifyUser(title, msg, tp)
+NotifyUser = function(title, msg, tp)
     tp = tp or "info"
     local colors = {success=C.Grn, error=C.Red, warn=C.Yel, info=C.Cyn}
     local iconTxt = {success="OK", error="X", warn="!", info="i"}
@@ -855,7 +962,7 @@ end
 -- Live Log
 local LiveLog = {}
 local liveRef = nil
-local function Log(txt, tp)
+Log = function(txt, tp)
     tp = tp or "info"
     table.insert(LiveLog, {t = "[" .. os.date("%H:%M:%S") .. "] " .. txt, tp = tp})
     if #LiveLog > 80 then table.remove(LiveLog, 1) end
@@ -926,7 +1033,6 @@ mst.Transparency = 0.35
 mst.Parent = Main
 track(mst, "Color")
 
--- Effects Layer
 local effectsLayer = Instance.new("Frame", Main)
 effectsLayer.Size = UDim2.new(1,0,1,0)
 effectsLayer.BackgroundTransparency = 1
@@ -1009,9 +1115,6 @@ task.spawn(function()
     end
 end)
 
--- ═══════════════════════════════════════════════════════════
--- HALLOWEEN EFFECTS LAYER
--- ═══════════════════════════════════════════════════════════
 local halloweenLayer = Instance.new("Frame", Main)
 halloweenLayer.Size = UDim2.new(1, 0, 1, 0)
 halloweenLayer.BackgroundTransparency = 1
@@ -1061,9 +1164,7 @@ task.spawn(function()
     end
 end)
 
--- ═══════════════════════════════════════════════════════════
 -- TITLE BAR
--- ═══════════════════════════════════════════════════════════
 local TH_H = 40
 local Title = Instance.new("Frame", Main)
 Title.Size = UDim2.new(1,0,0,TH_H)
@@ -1088,18 +1189,12 @@ Ttl.Size = UDim2.new(1,-140,1,0)
 Ttl.Position = UDim2.new(0,118,0,0)
 Ttl.BackgroundTransparency = 1
 Ttl.RichText = true
-Ttl.Text = '<font color="rgb(240,240,245)">Oc1DvHUB</font> <font color="rgb(255,145,80)">|</font> <font color="rgb(191,90,242)">HALLOWEEN EDITION</font>'
+Ttl.Text = '<font color="rgb(255,255,255)">Oc1Dv</font><font color="rgb(255,145,80)">HUB</font>'
 Ttl.TextSize = 14
 Ttl.Font = Enum.Font.GothamBold
 Ttl.TextXAlignment = Enum.TextXAlignment.Left
 Ttl.ZIndex = 21
 
-local function updTitleColor(nc)
-    local r, g, b = math.floor(nc.R*255), math.floor(nc.G*255), math.floor(nc.B*255)
-    Ttl.Text = string.format('<font color="rgb(240,240,245)">Oc1DvHUB</font> <font color="rgb(%d,%d,%d)">|</font> <font color="rgb(191,90,242)">HALLOWEEN EDITION</font>', r, g, b)
-end
-
--- Animated border hue
 task.spawn(function()
     local hue = 0
     while Main.Parent do
@@ -1110,7 +1205,6 @@ task.spawn(function()
     end
 end)
 
--- Traffic dots
 local DOT_SIZE = 12
 local DOT_Y = 0.5
 local GrnB = Instance.new("TextButton", Title)
@@ -1143,7 +1237,6 @@ ClsB.AutoButtonColor = false
 ClsB.ZIndex = 22
 Instance.new("UICorner", ClsB).CornerRadius = UDim.new(1,0)
 
--- Floating Button
 local FB = Instance.new("TextButton")
 FB.Size = UDim2.new(0,52,0,52)
 FB.Position = UDim2.new(0,15,0,150)
@@ -1166,7 +1259,6 @@ fbi.BackgroundTransparency = 1
 fbi.Image = CONFIG.LOGO
 fbi.ZIndex = 101
 
--- Drag
 local drg, dst, spt
 Title.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -1220,7 +1312,6 @@ GrnB.MouseButton1Click:Connect(function()
 end)
 FB.MouseButton1Click:Connect(doShow)
 
--- Sidebar
 local SX, SY = 10, TH_H + 10
 local SW = 110
 local UH = 46
@@ -1298,7 +1389,6 @@ UN.TextXAlignment = Enum.TextXAlignment.Left
 UN.TextTruncate = Enum.TextTruncate.AtEnd
 UN.ZIndex = 11
 
--- Content
 local Cont = Instance.new("Frame", Main)
 Cont.Size = UDim2.new(1,-(CX+10),1,-SY-10)
 Cont.Position = UDim2.new(0,CX,0,SY)
@@ -1351,7 +1441,6 @@ THt.Font = Enum.Font.GothamMedium
 THt.TextXAlignment = Enum.TextXAlignment.Left
 THt.ZIndex = 12
 
--- TAB DATA
 local tabData = {
     {name="RUMAH", icon=IC.Rumah},
     {name="COLLECT", icon=IC.Collect},
@@ -1406,7 +1495,7 @@ for i, t in ipairs(tabData) do
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
     tabBtns[t.name] = b
     if i == 1 then track(b, "BackgroundColor3") end
-    
+
     b.MouseButton1Click:Connect(function()
         if curTab == t.name then return end
         sfx()
@@ -1439,9 +1528,6 @@ SearchInput:GetPropertyChangedSignal("Text"):Connect(function()
     end
 end)
 
--- ═══════════════════════════════════════════════════════════
--- COMPONENTS
--- ═══════════════════════════════════════════════════════════
 local function Btn(parent, text, cb, col)
     local b = Instance.new("TextButton", parent)
     b.Size = UDim2.new(1,-4,0,32)
@@ -1493,7 +1579,7 @@ local function Toggle(parent, title, initial, cb)
     f.ZIndex = 10
     Instance.new("UICorner", f).CornerRadius = UDim.new(0,10)
     trackSearch(f, title)
-    
+
     local lbl = Instance.new("TextLabel", f)
     lbl.Size = UDim2.new(1,-60,1,0)
     lbl.Position = UDim2.new(0,10,0,0)
@@ -1504,7 +1590,7 @@ local function Toggle(parent, title, initial, cb)
     lbl.Font = Enum.Font.GothamMedium
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.ZIndex = 11
-    
+
     local bg = Instance.new("Frame", f)
     bg.Size = UDim2.new(0,40,0,22)
     bg.Position = UDim2.new(1,-50,0.5,-11)
@@ -1512,7 +1598,7 @@ local function Toggle(parent, title, initial, cb)
     bg.BorderSizePixel = 0
     bg.ZIndex = 11
     Instance.new("UICorner", bg).CornerRadius = UDim.new(1,0)
-    
+
     local knob = Instance.new("Frame", bg)
     knob.Size = UDim2.new(0,18,0,18)
     knob.Position = initial and UDim2.new(1,-20,0.5,-9) or UDim2.new(0,2,0.5,-9)
@@ -1520,7 +1606,7 @@ local function Toggle(parent, title, initial, cb)
     knob.BorderSizePixel = 0
     knob.ZIndex = 12
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
-    
+
     local state = initial
     local btn = Instance.new("TextButton", f)
     btn.Size = UDim2.new(1,0,1,0)
@@ -1551,7 +1637,7 @@ local function Slider(parent, title, mn, mx, df, cb)
     local s = Instance.new("UIStroke", f)
     s.Color = C.Stroke; s.Thickness = 1; s.Transparency = 0.82; s.Parent = f
     trackSearch(f, title)
-    
+
     local l = Instance.new("TextLabel", f)
     l.Size = UDim2.new(1,-14,0,14)
     l.Position = UDim2.new(0,10,0,6)
@@ -1562,7 +1648,7 @@ local function Slider(parent, title, mn, mx, df, cb)
     l.Font = Enum.Font.GothamMedium
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.ZIndex = 11
-    
+
     local bar = Instance.new("Frame", f)
     bar.Size = UDim2.new(1,-20,0,8)
     bar.Position = UDim2.new(0,10,0,26)
@@ -1570,7 +1656,7 @@ local function Slider(parent, title, mn, mx, df, cb)
     bar.BorderSizePixel = 0
     bar.ZIndex = 11
     Instance.new("UICorner", bar).CornerRadius = UDim.new(1,0)
-    
+
     local fl = Instance.new("Frame", bar)
     fl.Size = UDim2.new((df-mn)/(mx-mn),0,1,0)
     fl.BackgroundColor3 = C.Pri
@@ -1578,7 +1664,7 @@ local function Slider(parent, title, mn, mx, df, cb)
     fl.ZIndex = 12
     Instance.new("UICorner", fl).CornerRadius = UDim.new(1,0)
     track(fl, "BackgroundColor3")
-    
+
     local knob = Instance.new("Frame", fl)
     knob.Size = UDim2.new(0,14,0,14)
     knob.Position = UDim2.new(1,-7,0.5,-7)
@@ -1586,7 +1672,7 @@ local function Slider(parent, title, mn, mx, df, cb)
     knob.BorderSizePixel = 0
     knob.ZIndex = 13
     Instance.new("UICorner", knob).CornerRadius = UDim.new(1,0)
-    
+
     local dr = false
     bar.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -1813,26 +1899,14 @@ local tcol = tabContent.COLLECT
 Sect(tcol, "COLLECT")
 
 Toggle(tcol, "Auto Collect", true, function(v) State.AutoCollect = v end)
-Toggle(tcol, "Auto TP (3s)", true, function(v) State.AutoTP = v end)
-
-local tpDelayLbl = Instance.new("TextLabel", tcol)
-tpDelayLbl.Size = UDim2.new(1,-4,0,26)
-tpDelayLbl.BackgroundColor3 = C.Card
-tpDelayLbl.BackgroundTransparency = 0.2
-tpDelayLbl.BorderSizePixel = 0
-tpDelayLbl.Text = "TP Delay: 3.0s (Locked)"
-tpDelayLbl.TextColor3 = C.Cyn
-tpDelayLbl.TextSize = 11
-tpDelayLbl.Font = Enum.Font.GothamMedium
-tpDelayLbl.ZIndex = 10
-Instance.new("UICorner", tpDelayLbl).CornerRadius = UDim.new(0,10)
+Toggle(tcol, "Auto TP", true, function(v) State.AutoTP = v end)
 
 Sect(tcol, "METHOD")
 Toggle(tcol, "FirePrompt", true, function(v) State.FirePrompt = v end)
 Toggle(tcol, "No Delay Button", true, function(v) State.NoDelay = v end)
 
 Slider(tcol, "Max Distance", 50, 2000, 500, function(v) State.MaxDistance = v end)
-Slider(tcol, "Collect Interval", 1, 10, 3, function(v) State.CollectInterval = v end)
+Slider(tcol, "Collect Interval", 1, 10, 1, function(v) State.CollectInterval = v end)
 
 -- ═══════════════════════════════════════════════════════════
 -- FILL: ESP
@@ -2083,12 +2157,12 @@ task.spawn(function()
             local ampm = t.hour >= 12 and "PM" or "AM"
             clockLbl2.Text = string.format("%02d:%02d:%02d %s", hour12, t.min, t.sec, ampm)
             dateLbl2.Text = os.date("%A, %d %B %Y")
-            
+
             local ev = getEventInfo()
             eventTimerLbl.Text = ev.countdownStr
             eventStatusLbl.Text = "Next: " .. ev.nextEventStr
             eventProgressFill.Size = UDim2.new(math.clamp(ev.percent, 0, 1), 0, 1, 0)
-            
+
             if ev.isEventActive then
                 eventTimerLbl.TextColor3 = C.Grn
                 eventStatusLbl.Text = "EVENT ACTIVE!"
@@ -2097,10 +2171,10 @@ task.spawn(function()
                 eventTimerLbl.TextColor3 = C.Pri
                 eventStatusLbl.TextColor3 = C.Dim
             end
-            
+
             statCollectedVal.Text = tostring(StatsData.ItemsCollected)
             statSpawnVal.Text = tostring(StatsData.ItemsSpawned)
-            
+
             for _, c in ipairs(ghostScroll:GetChildren()) do
                 if c:IsA("TextLabel") then c:Destroy() end
             end
@@ -2336,7 +2410,6 @@ local function updateHue(px)
     huePrev.BackgroundColor3 = col
     S.HueColor = col
     applyColor(col)
-    updTitleColor(col)
 end
 hueBar.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -2358,7 +2431,6 @@ end)
 Btn(ttem, "Reset Warna (Orange)", function()
     S.HueColor = Color3.fromRGB(255, 145, 80)
     applyColor(S.HueColor)
-    updTitleColor(S.HueColor)
 end, Color3.fromRGB(140, 70, 50))
 
 Sect(ttem, "BG BRIGHTNESS")
@@ -2399,7 +2471,7 @@ creditTitle.Size = UDim2.new(1, -20, 0, 22)
 creditTitle.Position = UDim2.new(0, 10, 0, 70)
 creditTitle.BackgroundTransparency = 1
 creditTitle.RichText = true
-creditTitle.Text = '<font color="rgb(255,140,70)">Oc1Dv</font><font color="rgb(240,240,245)">HUB</font>'
+creditTitle.Text = '<font color="rgb(255,255,255)">Oc1Dv</font><font color="rgb(255,145,80)">HUB</font>'
 creditTitle.TextSize = 18
 creditTitle.Font = Enum.Font.GothamBlack
 creditTitle.TextXAlignment = Enum.TextXAlignment.Center
