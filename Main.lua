@@ -1,7 +1,7 @@
 --[[ Oc1DvHUB × MOURGE SHIFT HALLOWEEN EDITION — FINAL
      UI: Custom Oc1DvHUB
      Tabs: RUMAH, COLLECT, ESP, TELEPORT, EVENT, MISC, TEMA, CREDITS
-     Update: Auto Scan Item + Multi Method Collect + Title Colors
+     Update: Auto Scan Item + Multi Method Collect + Fix Hold/Skip Button
 ]]
 print("[Oc1DvHUB] Loading Halloween Edition FINAL...")
 
@@ -103,6 +103,12 @@ local function sfx()
         s:Play(); Debris:AddItem(s, 2)
     end)
 end
+
+-- ═══════════════════════════════════════════════════════════
+-- FORWARD DECLARATION (FIX HOLD/SKIP)
+-- ═══════════════════════════════════════════════════════════
+local NotifyUser
+local Log
 
 -- ═══════════════════════════════════════════════════════════
 -- STATE
@@ -270,7 +276,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════
--- AUTO SCAN ITEM (Multi Keyword + Multi Type)
+-- AUTO SCAN ITEM
 -- ═══════════════════════════════════════════════════════════
 local ITEM_KEYWORDS = {
     "trickortreatitem", "trickortreat", "trick_or_treat",
@@ -488,6 +494,32 @@ task.spawn(function()
     end
 end)
 
+-- ═══════════════════════════════════════════════════════════
+-- FIX HOLD/SKIP BUTTON (DescendantAdded)
+-- ═══════════════════════════════════════════════════════════
+local function forceNoDelayPrompt(obj)
+    if obj:IsA("ProximityPrompt") and State.NoDelay then
+        pcall(function()
+            obj.HoldDuration = 0
+            obj.MaxActivationDistance = 9e9
+            obj.Enabled = true
+        end)
+    end
+end
+
+pcall(function()
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        forceNoDelayPrompt(obj)
+    end
+end)
+
+workspace.DescendantAdded:Connect(function(obj)
+    if obj:IsA("ProximityPrompt") and State.NoDelay then
+        task.wait(0.05)
+        forceNoDelayPrompt(obj)
+    end
+end)
+
 -- FIREPROMPT
 local function firePrompt(prompt)
     if not prompt or not fireproximityprompt then return false end
@@ -504,23 +536,6 @@ local function firePrompt(prompt)
     end)
     return ok
 end
-
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if State.NoDelay then
-            pcall(function()
-                for _, obj in ipairs(workspace:GetDescendants()) do
-                    if obj:IsA("ProximityPrompt") then
-                        obj.HoldDuration = 0
-                        obj.MaxActivationDistance = 9e9
-                        obj.Enabled = true
-                    end
-                end
-            end)
-        end
-    end
-end)
 
 -- ═══════════════════════════════════════════════════════════
 -- AUTO COLLECT ITEM (Multi Method)
@@ -684,7 +699,9 @@ task.spawn(function()
                             if not countedItems[d.model] then
                                 countedItems[d.model] = true
                                 StatsData.ItemsCollected += 1
-                                NotifyUser("Collected", "TrickOrTreatItem collected!", "success")
+                                if NotifyUser then
+                                    NotifyUser("Collected", "TrickOrTreatItem collected!", "success")
+                                end
                             end
                             collected += 1
                             task.wait(State.CollectDelay)
