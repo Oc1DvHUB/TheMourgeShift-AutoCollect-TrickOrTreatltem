@@ -1,7 +1,7 @@
 --[[ Oc1DvHUB × MOURGE SHIFT HALLOWEEN EDITION — FINAL
      UI: Custom Oc1DvHUB
      Tabs: RUMAH, COLLECT, ESP, TELEPORT, EVENT, MISC, TEMA, CREDITS
-     Update: Auto Scan Item + Multi Method Collect + Fix Hold/Skip Button
+     Update: Auto Scan Item + Pumpkin + Multi Method Collect + Fix Hold/Skip
 ]]
 print("[Oc1DvHUB] Loading Halloween Edition FINAL...")
 
@@ -55,6 +55,7 @@ local C = {
     Yel = Color3.fromRGB(255, 210, 110),
     Cyn = Color3.fromRGB(110, 200, 245),
     Pur = Color3.fromRGB(191, 90, 242),
+    Orng = Color3.fromRGB(255, 165, 0),
     Stroke = Color3.fromRGB(255,255,255),
 }
 
@@ -104,9 +105,6 @@ local function sfx()
     end)
 end
 
--- ═══════════════════════════════════════════════════════════
--- FORWARD DECLARATION (FIX HOLD/SKIP)
--- ═══════════════════════════════════════════════════════════
 local NotifyUser
 local Log
 
@@ -123,7 +121,14 @@ local State = {
     CollectDelay = 0.2,
     MaxPerCycle = 5,
 
+    AutoCollectPumpkin = true,
+    PumpkinTP = true,
+    PumpkinInterval = 1,
+    PumpkinMaxDistance = 500,
+    PumpkinMaxPerCycle = 5,
+
     ItemESP = true,
+    PumpkinESP = true,
     ReaperESP = true,
     GhostESP = false,
     ShowDistance = true,
@@ -149,6 +154,9 @@ local StatsData = {
     ItemsFound = 0,
     ItemsCollected = 0,
     ItemsSpawned = 0,
+    PumpkinsFound = 0,
+    PumpkinsCollected = 0,
+    PumpkinsSpawned = 0,
     ReapersFound = 0,
     GhostsFound = 0,
     AFKTicks = 0,
@@ -156,10 +164,13 @@ local StatsData = {
 }
 
 local itemCache = {}
+local pumpkinCache = {}
 local reaperCache = {}
 local ghostCache = {}
 local countedItems = {}
+local countedPumpkins = {}
 local lastSeenItems = {}
+local lastSeenPumpkins = {}
 
 -- ═══════════════════════════════════════════════════════════
 -- TP LOCATIONS
@@ -222,11 +233,6 @@ local function getPart(obj)
     return nil
 end
 
-local function hasKeyword(name, kw)
-    return name:lower():find(kw:lower()) ~= nil
-end
-
--- ANTI-AFK
 local function doAntiAFK()
     pcall(function()
         local vu = game:GetService("VirtualUser")
@@ -249,7 +255,6 @@ pcall(function()
     end)
 end)
 
--- INVISIBLE & NOCLIP LOOP
 task.spawn(function()
     while true do
         task.wait(0.2)
@@ -276,7 +281,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════
--- AUTO SCAN ITEM
+-- SCAN ITEM
 -- ═══════════════════════════════════════════════════════════
 local ITEM_KEYWORDS = {
     "trickortreatitem", "trickortreat", "trick_or_treat",
@@ -355,6 +360,89 @@ local function scanItems()
     return found
 end
 
+-- ═══════════════════════════════════════════════════════════
+-- SCAN PUMPKIN
+-- ═══════════════════════════════════════════════════════════
+local PUMPKIN_KEYWORDS = {
+    "spookypumpkin", "spooky_pumpkin", "spooky pumpkin",
+    "pumpkin", "pumkin", "jacko", "jackolantern", "jack_o_lantern",
+    "halloweenpumpkin", "pumpkinitem", "pumpkin_item",
+}
+
+local PUMPKIN_BLACKLIST = {
+    "prompt", "ui", "gui", "shop", "sign", "spawner",
+    "spawn", "effect", "sound", "particle", "highlight",
+    "button", "text", "label", "screen", "folder", "decal",
+    "texture", "mesh", "light", "beam", "trail",
+}
+
+local function isPumpkinBlacklisted(name)
+    local low = name:lower()
+    for _, bl in ipairs(PUMPKIN_BLACKLIST) do
+        if low:find(bl, 1, true) then return true end
+    end
+    return false
+end
+
+local function isPumpkinName(name)
+    local low = name:lower()
+    for _, kw in ipairs(PUMPKIN_KEYWORDS) do
+        if low:find(kw, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function scanPumpkins()
+    local found = {}
+    local seen = {}
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if seen[obj] then continue end
+            if isPumpkinBlacklisted(obj.Name) then continue end
+
+            if isPumpkinName(obj.Name) then
+                local part = nil
+                if obj:IsA("BasePart") or obj:IsA("MeshPart") then
+                    part = obj
+                elseif obj:IsA("Model") then
+                    part = obj.PrimaryPart
+                        or obj:FindFirstChildWhichIsA("BasePart")
+                        or obj:FindFirstChildWhichIsA("MeshPart")
+                elseif obj:IsA("Tool") then
+                    part = obj:FindFirstChildWhichIsA("BasePart")
+                    if not part and obj.Parent and obj.Parent:IsA("Backpack") then
+                        continue
+                    end
+                elseif obj:IsA("Folder") then
+                    part = obj:FindFirstChildWhichIsA("BasePart", true)
+                    if part then
+                        local model = part:FindFirstAncestorOfClass("Model") or obj
+                        if not seen[model] then
+                            seen[model] = true
+                            table.insert(found, {model = model, part = part, source = obj.Name})
+                        end
+                        continue
+                    end
+                end
+
+                if part and part.Parent then
+                    local root = part:FindFirstAncestorOfClass("Model") or obj
+                    if not seen[root] then
+                        seen[root] = true
+                        table.insert(found, {model = root, part = part, source = obj.Name})
+                    end
+                end
+            end
+        end
+    end)
+    return found
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- SCAN REAPER & GHOST
+-- ═══════════════════════════════════════════════════════════
 local function scanReapers()
     local found = {}
     pcall(function()
@@ -481,7 +569,6 @@ task.spawn(function()
     end
 end)
 
--- WALKSPEED
 task.spawn(function()
     while true do
         task.wait(0.3)
@@ -495,7 +582,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════
--- FIX HOLD/SKIP BUTTON (DescendantAdded)
+-- FIX HOLD/SKIP BUTTON
 -- ═══════════════════════════════════════════════════════════
 local function forceNoDelayPrompt(obj)
     if obj:IsA("ProximityPrompt") and State.NoDelay then
@@ -520,7 +607,6 @@ workspace.DescendantAdded:Connect(function(obj)
     end
 end)
 
--- FIREPROMPT
 local function firePrompt(prompt)
     if not prompt or not fireproximityprompt then return false end
     local ok = false
@@ -538,7 +624,7 @@ local function firePrompt(prompt)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- AUTO COLLECT ITEM (Multi Method)
+-- COLLECT ITEM (Multi Method)
 -- ═══════════════════════════════════════════════════════════
 local function collectItem(data)
     if not data or not data.part or not data.part.Parent then return false end
@@ -546,7 +632,6 @@ local function collectItem(data)
     local model = data.model
     local success = false
 
-    -- Method 1: ProximityPrompt
     local prompt = model:FindFirstChildWhichIsA("ProximityPrompt", true)
     if not prompt and part then
         prompt = part:FindFirstChildWhichIsA("ProximityPrompt")
@@ -565,7 +650,6 @@ local function collectItem(data)
         end
     end
 
-    -- Method 2: ClickDetector
     local cd = model:FindFirstChildWhichIsA("ClickDetector", true)
     if not cd and part then
         cd = part:FindFirstChildWhichIsA("ClickDetector")
@@ -577,7 +661,6 @@ local function collectItem(data)
         end)
     end
 
-    -- Method 3: firetouchinterest
     local hrp = getHRP()
     if hrp and firetouchinterest then
         pcall(function()
@@ -588,13 +671,13 @@ local function collectItem(data)
         end)
     end
 
-    -- Method 4: RemoteEvent auto-detect
     if not success then
         pcall(function()
             for _, obj in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
                 if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
                     local n = obj.Name:lower()
-                    if n:find("collect") or n:find("pickup") or n:find("trick") or n:find("treat") then
+                    if n:find("collect") or n:find("pickup") or n:find("trick")
+                       or n:find("treat") or n:find("pumpkin") then
                         pcall(function() obj:FireServer(part) end)
                         pcall(function() obj:InvokeServer(part) end)
                         success = true
@@ -660,21 +743,24 @@ end
 local function removeESP(model)
     if not model then return end
     for _, c in ipairs(model:GetChildren()) do
-        if c.Name == "ItemESP_HL" or c.Name == "ReaperESP_HL" or c.Name == "GhostESP_HL" then c:Destroy() end
+        if c.Name == "ItemESP_HL" or c.Name == "PumpkinESP_HL"
+           or c.Name == "ReaperESP_HL" or c.Name == "GhostESP_HL" then c:Destroy() end
     end
     for _, p in ipairs(model:GetDescendants()) do
         if p:IsA("BasePart") then
             local t1 = p:FindFirstChild("ItemESP_Tag")
-            local t2 = p:FindFirstChild("ReaperESP_Tag")
-            local t3 = p:FindFirstChild("GhostESP_Tag")
+            local t2 = p:FindFirstChild("PumpkinESP_Tag")
+            local t3 = p:FindFirstChild("ReaperESP_Tag")
+            local t4 = p:FindFirstChild("GhostESP_Tag")
             if t1 then t1:Destroy() end
             if t2 then t2:Destroy() end
             if t3 then t3:Destroy() end
+            if t4 then t4:Destroy() end
         end
     end
 end
 
--- AUTO COLLECT LOOP
+-- AUTO COLLECT ITEM LOOP
 task.spawn(function()
     while true do
         task.wait(State.CollectInterval)
@@ -713,7 +799,46 @@ task.spawn(function()
     end
 end)
 
--- SPAWN COUNTER
+-- AUTO COLLECT PUMPKIN LOOP
+task.spawn(function()
+    while true do
+        task.wait(State.PumpkinInterval)
+        if State.AutoCollectPumpkin then
+            local pumpkins = scanPumpkins()
+            local hrp = getHRP()
+            if #pumpkins > 0 and hrp then
+                for _, d in ipairs(pumpkins) do
+                    d.dist = (d.part.Position - hrp.Position).Magnitude
+                end
+                table.sort(pumpkins, function(a, b) return a.dist < b.dist end)
+                local collected = 0
+                for _, d in ipairs(pumpkins) do
+                    if d.dist <= State.PumpkinMaxDistance and collected < State.PumpkinMaxPerCycle then
+                        if State.PumpkinTP and d.dist > 5 then
+                            pcall(function()
+                                hrp.CFrame = CFrame.new(d.part.Position + Vector3.new(0, 3, 0))
+                            end)
+                            task.wait(State.TPSettleDelay)
+                        end
+                        if collectItem(d) then
+                            if not countedPumpkins[d.model] then
+                                countedPumpkins[d.model] = true
+                                StatsData.PumpkinsCollected += 1
+                                if NotifyUser then
+                                    NotifyUser("Pumpkin", "Pumpkin collected!", "success")
+                                end
+                            end
+                            collected += 1
+                            task.wait(State.CollectDelay)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
+
+-- SPAWN COUNTER (item + pumpkin)
 task.spawn(function()
     while true do
         task.wait(0.5)
@@ -732,6 +857,23 @@ task.spawn(function()
         end
         for model in pairs(countedItems) do
             if not model.Parent then countedItems[model] = nil end
+        end
+
+        local pumpkins = scanPumpkins()
+        StatsData.PumpkinsFound = #pumpkins
+        for _, d in ipairs(pumpkins) do
+            if not lastSeenPumpkins[d.model] then
+                lastSeenPumpkins[d.model] = true
+                StatsData.PumpkinsSpawned += 1
+            end
+        end
+        local curP = {}
+        for _, d in ipairs(pumpkins) do curP[d.model] = true end
+        for model in pairs(lastSeenPumpkins) do
+            if not curP[model] then lastSeenPumpkins[model] = nil end
+        end
+        for model in pairs(countedPumpkins) do
+            if not model.Parent then countedPumpkins[model] = nil end
         end
     end
 end)
@@ -761,6 +903,28 @@ task.spawn(function()
         else
             for m, _ in pairs(itemCache) do removeESP(m) end
             itemCache = {}
+        end
+
+        if State.PumpkinESP then
+            local ps = scanPumpkins()
+            local cur = {}
+            for _, d in ipairs(ps) do cur[d.model] = d end
+            for m, _ in pairs(pumpkinCache) do
+                if not cur[m] or not m.Parent then
+                    removeESP(m)
+                    pumpkinCache[m] = nil
+                end
+            end
+            for m, d in pairs(cur) do
+                if not pumpkinCache[m] then
+                    createHL(m, C.Orng, "PumpkinESP_HL")
+                    createTag(d.part, d.model.Name, C.Orng, "PumpkinESP_Tag")
+                    pumpkinCache[m] = d
+                end
+            end
+        else
+            for m, _ in pairs(pumpkinCache) do removeESP(m) end
+            pumpkinCache = {}
         end
 
         if State.ReaperESP then
@@ -839,6 +1003,7 @@ task.spawn(function()
                     end
                 end
                 update(itemCache, "ItemESP_Tag", C.Grn)
+                update(pumpkinCache, "PumpkinESP_Tag", C.Orng)
                 update(reaperCache, "ReaperESP_Tag", C.Red)
                 update(ghostCache, "GhostESP_Tag", C.Cyn)
             end
@@ -884,7 +1049,6 @@ SG.ResetOnSpawn = false
 SG.IgnoreGuiInset = true
 SG.Parent = pg
 
--- NOTIF
 local NotifyContainer = Instance.new("Frame")
 NotifyContainer.Size = UDim2.new(0, 300, 0, 400)
 NotifyContainer.Position = UDim2.new(1, -310, 1, -410)
@@ -976,7 +1140,6 @@ NotifyUser = function(title, msg, tp)
     end)
 end
 
--- Live Log
 local LiveLog = {}
 local liveRef = nil
 Log = function(txt, tp)
@@ -1181,7 +1344,6 @@ task.spawn(function()
     end
 end)
 
--- TITLE BAR
 local TH_H = 40
 local Title = Instance.new("Frame", Main)
 Title.Size = UDim2.new(1,0,0,TH_H)
@@ -1913,17 +2075,21 @@ end)
 -- FILL: COLLECT
 -- ═══════════════════════════════════════════════════════════
 local tcol = tabContent.COLLECT
-Sect(tcol, "COLLECT")
-
-Toggle(tcol, "Auto Collect", true, function(v) State.AutoCollect = v end)
+Sect(tcol, "TREAT COLLECT")
+Toggle(tcol, "Auto Collect Item", true, function(v) State.AutoCollect = v end)
 Toggle(tcol, "Auto TP", true, function(v) State.AutoTP = v end)
+Slider(tcol, "Max Distance", 50, 2000, 500, function(v) State.MaxDistance = v end)
+Slider(tcol, "Collect Interval", 1, 10, 1, function(v) State.CollectInterval = v end)
+
+Sect(tcol, "PUMPKIN COLLECT")
+Toggle(tcol, "Auto Collect Pumpkin", true, function(v) State.AutoCollectPumpkin = v end)
+Toggle(tcol, "Pumpkin Auto TP", true, function(v) State.PumpkinTP = v end)
+Slider(tcol, "Pumpkin Max Distance", 50, 2000, 500, function(v) State.PumpkinMaxDistance = v end)
+Slider(tcol, "Pumpkin Interval", 1, 10, 1, function(v) State.PumpkinInterval = v end)
 
 Sect(tcol, "METHOD")
 Toggle(tcol, "FirePrompt", true, function(v) State.FirePrompt = v end)
 Toggle(tcol, "No Delay Button", true, function(v) State.NoDelay = v end)
-
-Slider(tcol, "Max Distance", 50, 2000, 500, function(v) State.MaxDistance = v end)
-Slider(tcol, "Collect Interval", 1, 10, 1, function(v) State.CollectInterval = v end)
 
 -- ═══════════════════════════════════════════════════════════
 -- FILL: ESP
@@ -1934,6 +2100,10 @@ Sect(te, "ESP")
 Toggle(te, "Item ESP", true, function(v)
     State.ItemESP = v
     if not v then for m, _ in pairs(itemCache) do removeESP(m) end itemCache = {} end
+end)
+Toggle(te, "Pumpkin ESP", true, function(v)
+    State.PumpkinESP = v
+    if not v then for m, _ in pairs(pumpkinCache) do removeESP(m) end pumpkinCache = {} end
 end)
 Toggle(te, "Reaper ESP", true, function(v)
     State.ReaperESP = v
@@ -2071,68 +2241,43 @@ dateLbl2.Font = Enum.Font.Gotham
 dateLbl2.TextXAlignment = Enum.TextXAlignment.Center
 dateLbl2.ZIndex = 11
 
-Sect(tEv, "STATISTIK COLLECT")
+Sect(tEv, "STATISTIK")
 
-local statsBox1 = Instance.new("Frame", tEv)
-statsBox1.Size = UDim2.new(1,-4,0,36)
-statsBox1.BackgroundColor3 = C.Card
-statsBox1.BackgroundTransparency = 0.2
-statsBox1.BorderSizePixel = 0
-statsBox1.ZIndex = 10
-Instance.new("UICorner", statsBox1).CornerRadius = UDim.new(0,10)
+local function mkStatRow(parent, title, color)
+    local bx = Instance.new("Frame", parent)
+    bx.Size = UDim2.new(1,-4,0,36)
+    bx.BackgroundColor3 = C.Card
+    bx.BackgroundTransparency = 0.2
+    bx.BorderSizePixel = 0
+    bx.ZIndex = 10
+    Instance.new("UICorner", bx).CornerRadius = UDim.new(0,10)
+    local t = Instance.new("TextLabel", bx)
+    t.Size = UDim2.new(0.5,0,1,0)
+    t.BackgroundTransparency = 1
+    t.Text = title
+    t.TextColor3 = C.Dim
+    t.TextSize = 10
+    t.Font = Enum.Font.GothamMedium
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.ZIndex = 11
+    t.Position = UDim2.fromOffset(10,0)
+    local v = Instance.new("TextLabel", bx)
+    v.Size = UDim2.new(0.5,-10,1,0)
+    v.Position = UDim2.new(0.5,0,0,0)
+    v.BackgroundTransparency = 1
+    v.Text = "0"
+    v.TextColor3 = color
+    v.TextSize = 16
+    v.Font = Enum.Font.GothamBold
+    v.TextXAlignment = Enum.TextXAlignment.Right
+    v.ZIndex = 11
+    return v
+end
 
-local statCollectedTitle = Instance.new("TextLabel", statsBox1)
-statCollectedTitle.Size = UDim2.new(0.5,0,1,0)
-statCollectedTitle.BackgroundTransparency = 1
-statCollectedTitle.Text = "Total Collected"
-statCollectedTitle.TextColor3 = C.Dim
-statCollectedTitle.TextSize = 10
-statCollectedTitle.Font = Enum.Font.GothamMedium
-statCollectedTitle.TextXAlignment = Enum.TextXAlignment.Left
-statCollectedTitle.ZIndex = 11
-statCollectedTitle.Position = UDim2.fromOffset(10,0)
-
-local statCollectedVal = Instance.new("TextLabel", statsBox1)
-statCollectedVal.Size = UDim2.new(0.5,-10,1,0)
-statCollectedVal.Position = UDim2.new(0.5,0,0,0)
-statCollectedVal.BackgroundTransparency = 1
-statCollectedVal.Text = "0"
-statCollectedVal.TextColor3 = C.Grn
-statCollectedVal.TextSize = 16
-statCollectedVal.Font = Enum.Font.GothamBold
-statCollectedVal.TextXAlignment = Enum.TextXAlignment.Right
-statCollectedVal.ZIndex = 11
-
-local statsBox2 = Instance.new("Frame", tEv)
-statsBox2.Size = UDim2.new(1,-4,0,36)
-statsBox2.BackgroundColor3 = C.Card
-statsBox2.BackgroundTransparency = 0.2
-statsBox2.BorderSizePixel = 0
-statsBox2.ZIndex = 10
-Instance.new("UICorner", statsBox2).CornerRadius = UDim.new(0,10)
-
-local statSpawnTitle = Instance.new("TextLabel", statsBox2)
-statSpawnTitle.Size = UDim2.new(0.5,0,1,0)
-statSpawnTitle.BackgroundTransparency = 1
-statSpawnTitle.Text = "Total Spawn"
-statSpawnTitle.TextColor3 = C.Dim
-statSpawnTitle.TextSize = 10
-statSpawnTitle.Font = Enum.Font.GothamMedium
-statSpawnTitle.TextXAlignment = Enum.TextXAlignment.Left
-statSpawnTitle.ZIndex = 11
-statSpawnTitle.Position = UDim2.fromOffset(10,0)
-
-local statSpawnVal = Instance.new("TextLabel", statsBox2)
-statSpawnVal.Size = UDim2.new(0.5,-10,1,0)
-statSpawnVal.Position = UDim2.new(0.5,0,0,0)
-statSpawnVal.BackgroundTransparency = 1
-statSpawnVal.Text = "0"
-statSpawnVal.TextColor3 = C.Pri
-statSpawnVal.TextSize = 16
-statSpawnVal.Font = Enum.Font.GothamBold
-statSpawnVal.TextXAlignment = Enum.TextXAlignment.Right
-statSpawnVal.ZIndex = 11
-track(statSpawnVal, "TextColor3")
+local statCollectedVal = mkStatRow(tEv, "Total Item Collected", C.Grn)
+local statSpawnVal = mkStatRow(tEv, "Total Item Spawn", C.Pri)
+local statPumpkinColVal = mkStatRow(tEv, "Total Pumpkin Collected", C.Orng)
+local statPumpkinSpawnVal = mkStatRow(tEv, "Total Pumpkin Spawn", C.Yel)
 
 Sect(tEv, "GHOST LIST")
 
@@ -2191,6 +2336,8 @@ task.spawn(function()
 
             statCollectedVal.Text = tostring(StatsData.ItemsCollected)
             statSpawnVal.Text = tostring(StatsData.ItemsSpawned)
+            statPumpkinColVal.Text = tostring(StatsData.PumpkinsCollected)
+            statPumpkinSpawnVal.Text = tostring(StatsData.PumpkinsSpawned)
 
             for _, c in ipairs(ghostScroll:GetChildren()) do
                 if c:IsA("TextLabel") then c:Destroy() end
@@ -2747,7 +2894,6 @@ infoCreditTxt.TextXAlignment = Enum.TextXAlignment.Center
 infoCreditTxt.TextYAlignment = Enum.TextYAlignment.Center
 infoCreditTxt.ZIndex = 11
 
--- Hotkey
 UIS.InputBegan:Connect(function(i, g)
     if g then return end
     if i.KeyCode == Enum.KeyCode.RightShift then
