@@ -1,9 +1,8 @@
---[[ Oc1DvHUB × MOURGE SHIFT HALLOWEEN EDITION — FINAL
-     UI: Custom Oc1DvHUB
-     Tabs: RUMAH, COLLECT, ESP, TELEPORT, EVENT, MISC, TEMA, CREDITS
-     Update: Auto Scan Item + Pumpkin + Multi Method Collect + Fix Hold/Skip
+--[[ Oc1DvHUB × MOURGE SHIFT HALLOWEEN EDITION — OPTIMIZED FINAL
+     Features: Auto Collect Item + Pumpkin, ESP, TP, Event, Misc, Tema, Credits
+     Optimized: Interval loops, targeted scan, guard character check
 ]]
-print("[Oc1DvHUB] Loading Halloween Edition FINAL...")
+print("[Oc1DvHUB] Loading Optimized FINAL...")
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -18,7 +17,6 @@ local CONFIG = {
     DISCORD = "https://discord.gg/wtVKkDvyz",
     LOGO = "rbxassetid://78682047053280",
     SND = "rbxassetid://7405483764",
-    BG = "rbxassetid://71753681160488",
 }
 
 local BG_LIST = {
@@ -30,17 +28,6 @@ local BG_LIST = {
     {name = "MBG BLUE", id = "rbxassetid://75442560708193"},
 }
 
-local IC = {
-    Collect = "rbxassetid://10734950020",
-    ESP = "rbxassetid://10734950309",
-    TP = "rbxassetid://10734942198",
-    Event = "rbxassetid://10734961809",
-    Misc = "rbxassetid://10734961809",
-    Rumah = "rbxassetid://10734950020",
-    Tema = "rbxassetid://10734961809",
-    Credits = "rbxassetid://10734950309",
-}
-
 local C = {
     Pri = Color3.fromRGB(255, 145, 80),
     PriDark = Color3.fromRGB(210, 110, 55),
@@ -49,7 +36,6 @@ local C = {
     Card = Color3.fromRGB(44, 44, 52),
     Txt = Color3.fromRGB(240, 240, 245),
     Dim = Color3.fromRGB(150, 150, 160),
-    Off = Color3.fromRGB(70, 70, 78),
     Red = Color3.fromRGB(255, 100, 110),
     Grn = Color3.fromRGB(110, 220, 140),
     Yel = Color3.fromRGB(255, 210, 110),
@@ -67,7 +53,6 @@ local S = {
     HueColor = C.Pri,
     BGBrightness = 0.55,
     MiniMode = true,
-    FPRunning = false,
 }
 
 local colorEls = {}
@@ -114,16 +99,13 @@ local Log
 local State = {
     AutoCollect = true,
     AutoTP = true,
-    CollectInterval = 1,
+    CollectInterval = 1.5,
     MaxDistance = 500,
-    ItemKeyword = "TrickOrTreatItem",
-    TPSettleDelay = 0.3,
-    CollectDelay = 0.2,
     MaxPerCycle = 5,
 
     AutoCollectPumpkin = true,
     PumpkinTP = true,
-    PumpkinInterval = 1,
+    PumpkinInterval = 1.5,
     PumpkinMaxDistance = 500,
     PumpkinMaxPerCycle = 5,
 
@@ -137,7 +119,7 @@ local State = {
     NoDelay = true,
 
     AntiAFK = true,
-    AntiAFKInterval = 60,
+    AntiAFKInterval = 90,
 
     GodMode = false,
     DesyncRadius = 30,
@@ -151,26 +133,14 @@ local State = {
 }
 
 local StatsData = {
-    ItemsFound = 0,
-    ItemsCollected = 0,
-    ItemsSpawned = 0,
-    PumpkinsFound = 0,
-    PumpkinsCollected = 0,
-    PumpkinsSpawned = 0,
-    ReapersFound = 0,
-    GhostsFound = 0,
-    AFKTicks = 0,
-    DesyncCount = 0,
+    ItemsFound = 0, ItemsCollected = 0, ItemsSpawned = 0,
+    PumpkinsFound = 0, PumpkinsCollected = 0, PumpkinsSpawned = 0,
+    ReapersFound = 0, GhostsFound = 0, AFKTicks = 0, DesyncCount = 0,
 }
 
-local itemCache = {}
-local pumpkinCache = {}
-local reaperCache = {}
-local ghostCache = {}
-local countedItems = {}
-local countedPumpkins = {}
-local lastSeenItems = {}
-local lastSeenPumpkins = {}
+local itemCache, pumpkinCache, reaperCache, ghostCache = {}, {}, {}, {}
+local countedItems, countedPumpkins = {}, {}
+local lastSeenItems, lastSeenPumpkins = {}, {}
 
 -- ═══════════════════════════════════════════════════════════
 -- TP LOCATIONS
@@ -224,13 +194,13 @@ local function getHum()
     return c and c:FindFirstChildOfClass("Humanoid")
 end
 
-local function getPart(obj)
-    if not obj or not obj.Parent then return nil end
-    if obj:IsA("BasePart") then return obj end
-    if obj:IsA("Model") then
-        return obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")
+local function safeTP(pos)
+    local hrp = getHRP()
+    if hrp and LP.Character and LP.Character.Parent then
+        pcall(function() hrp.CFrame = CFrame.new(pos) end)
+        return true
     end
-    return nil
+    return false
 end
 
 local function doAntiAFK()
@@ -255,12 +225,13 @@ pcall(function()
     end)
 end)
 
+-- Invisible/Noclip - 1s interval
 task.spawn(function()
     while true do
-        task.wait(0.2)
+        task.wait(0.5)
         local c = LP.Character
         if c then
-            for _, p in ipairs(c:GetDescendants()) do
+            for _, p in ipairs(c:GetChildren()) do
                 if p:IsA("BasePart") then
                     if State.Invisible then
                         p.LocalTransparencyModifier = 1
@@ -281,7 +252,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════
--- SCAN ITEM
+-- KEYWORD TABLES
 -- ═══════════════════════════════════════════════════════════
 local ITEM_KEYWORDS = {
     "trickortreatitem", "trickortreat", "trick_or_treat",
@@ -289,86 +260,17 @@ local ITEM_KEYWORDS = {
     "halloweenitem", "eventitem", "collectitem", "pickupitem",
     "trickortreatltem",
 }
-
 local ITEM_BLACKLIST = {
     "prompt", "ui", "gui", "shop", "sign", "spawner",
     "spawn", "effect", "sound", "particle", "highlight",
     "button", "text", "label", "screen", "folder",
 }
 
-local function isItemBlacklisted(name)
-    local low = name:lower()
-    for _, bl in ipairs(ITEM_BLACKLIST) do
-        if low:find(bl, 1, true) then return true end
-    end
-    return false
-end
-
-local function isItemName(name)
-    local low = name:lower()
-    for _, kw in ipairs(ITEM_KEYWORDS) do
-        if low:find(kw, 1, true) then
-            return true
-        end
-    end
-    return false
-end
-
-local function scanItems()
-    local found = {}
-    local seen = {}
-    pcall(function()
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if seen[obj] then continue end
-            if isItemBlacklisted(obj.Name) then continue end
-
-            if isItemName(obj.Name) then
-                local part = nil
-                if obj:IsA("BasePart") then
-                    part = obj
-                elseif obj:IsA("Model") then
-                    part = obj.PrimaryPart
-                        or obj:FindFirstChildWhichIsA("BasePart")
-                        or obj:FindFirstChild("HumanoidRootPart", true)
-                elseif obj:IsA("Tool") then
-                    part = obj:FindFirstChildWhichIsA("BasePart")
-                    if not part and obj.Parent and obj.Parent:IsA("Backpack") then
-                        continue
-                    end
-                elseif obj:IsA("Folder") then
-                    part = obj:FindFirstChildWhichIsA("BasePart", true)
-                    if part then
-                        local model = part:FindFirstAncestorOfClass("Model") or obj
-                        if not seen[model] then
-                            seen[model] = true
-                            table.insert(found, {model = model, part = part, source = obj.Name})
-                        end
-                        continue
-                    end
-                end
-
-                if part and part.Parent then
-                    local root = part:FindFirstAncestorOfClass("Model") or obj
-                    if not seen[root] then
-                        seen[root] = true
-                        table.insert(found, {model = root, part = part, source = obj.Name})
-                    end
-                end
-            end
-        end
-    end)
-    return found
-end
-
--- ═══════════════════════════════════════════════════════════
--- SCAN PUMPKIN
--- ═══════════════════════════════════════════════════════════
 local PUMPKIN_KEYWORDS = {
     "spookypumpkin", "spooky_pumpkin", "spooky pumpkin",
     "pumpkin", "pumkin", "jacko", "jackolantern", "jack_o_lantern",
     "halloweenpumpkin", "pumpkinitem", "pumpkin_item",
 }
-
 local PUMPKIN_BLACKLIST = {
     "prompt", "ui", "gui", "shop", "sign", "spawner",
     "spawn", "effect", "sound", "particle", "highlight",
@@ -376,62 +278,62 @@ local PUMPKIN_BLACKLIST = {
     "texture", "mesh", "light", "beam", "trail",
 }
 
-local function isPumpkinBlacklisted(name)
+local function checkName(name, keywords, blacklist)
     local low = name:lower()
-    for _, bl in ipairs(PUMPKIN_BLACKLIST) do
-        if low:find(bl, 1, true) then return true end
+    for _, bl in ipairs(blacklist) do
+        if low:find(bl, 1, true) then return false end
+    end
+    for _, kw in ipairs(keywords) do
+        if low:find(kw, 1, true) then return true end
     end
     return false
 end
 
-local function isPumpkinName(name)
-    local low = name:lower()
-    for _, kw in ipairs(PUMPKIN_KEYWORDS) do
-        if low:find(kw, 1, true) then
-            return true
-        end
+local function extractPart(obj)
+    if not obj or not obj.Parent then return nil end
+    if obj:IsA("BasePart") or obj:IsA("MeshPart") then return obj end
+    if obj:IsA("Model") then
+        return obj.PrimaryPart
+            or obj:FindFirstChildWhichIsA("BasePart")
+            or obj:FindFirstChildWhichIsA("MeshPart")
     end
-    return false
+    if obj:IsA("Tool") then
+        return obj:FindFirstChildWhichIsA("BasePart")
+    end
+    if obj:IsA("Folder") then
+        return obj:FindFirstChildWhichIsA("BasePart", true)
+    end
+    return nil
 end
 
-local function scanPumpkins()
+-- ═══════════════════════════════════════════════════════════
+-- SCAN (Optimized: pakai GetChildren + Descendants terbatas)
+-- ═══════════════════════════════════════════════════════════
+local function scanByKeyword(keywords, blacklist)
     local found = {}
     local seen = {}
-    pcall(function()
-        for _, obj in ipairs(workspace:GetDescendants()) do
-            if seen[obj] then continue end
-            if isPumpkinBlacklisted(obj.Name) then continue end
-
-            if isPumpkinName(obj.Name) then
-                local part = nil
-                if obj:IsA("BasePart") or obj:IsA("MeshPart") then
-                    part = obj
-                elseif obj:IsA("Model") then
-                    part = obj.PrimaryPart
-                        or obj:FindFirstChildWhichIsA("BasePart")
-                        or obj:FindFirstChildWhichIsA("MeshPart")
-                elseif obj:IsA("Tool") then
-                    part = obj:FindFirstChildWhichIsA("BasePart")
-                    if not part and obj.Parent and obj.Parent:IsA("Backpack") then
-                        continue
-                    end
-                elseif obj:IsA("Folder") then
-                    part = obj:FindFirstChildWhichIsA("BasePart", true)
-                    if part then
-                        local model = part:FindFirstAncestorOfClass("Model") or obj
-                        if not seen[model] then
-                            seen[model] = true
-                            table.insert(found, {model = model, part = part, source = obj.Name})
-                        end
-                        continue
-                    end
+    local ok = pcall(function()
+        for _, child in ipairs(workspace:GetChildren()) do
+            -- Cek child langsung
+            if checkName(child.Name, keywords, blacklist) then
+                local part = extractPart(child)
+                if part and not seen[child] then
+                    seen[child] = true
+                    table.insert(found, {model = child, part = part, name = child.Name})
                 end
-
-                if part and part.Parent then
-                    local root = part:FindFirstAncestorOfClass("Model") or obj
-                    if not seen[root] then
-                        seen[root] = true
-                        table.insert(found, {model = root, part = part, source = obj.Name})
+            end
+            -- Cek descendant child (dibatasi)
+            if child:IsA("Model") or child:IsA("Folder") then
+                for _, sub in ipairs(child:GetDescendants()) do
+                    if checkName(sub.Name, keywords, blacklist) then
+                        local part = extractPart(sub)
+                        if part then
+                            local root = part:FindFirstAncestorOfClass("Model") or sub
+                            if not seen[root] then
+                                seen[root] = true
+                                table.insert(found, {model = root, part = part, name = sub.Name})
+                            end
+                        end
                     end
                 end
             end
@@ -440,9 +342,14 @@ local function scanPumpkins()
     return found
 end
 
--- ═══════════════════════════════════════════════════════════
--- SCAN REAPER & GHOST
--- ═══════════════════════════════════════════════════════════
+local function scanItems()
+    return scanByKeyword(ITEM_KEYWORDS, ITEM_BLACKLIST)
+end
+
+local function scanPumpkins()
+    return scanByKeyword(PUMPKIN_KEYWORDS, PUMPKIN_BLACKLIST)
+end
+
 local function scanReapers()
     local found = {}
     pcall(function()
@@ -451,7 +358,7 @@ local function scanReapers()
                 local n = obj.Name:lower()
                 if (n:find("reaper") or n:find("death") or n:find("grim"))
                    and not Players:GetPlayerFromCharacter(obj) then
-                    local part = getPart(obj)
+                    local part = extractPart(obj)
                     if part then table.insert(found, {model = obj, part = part}) end
                 end
             end
@@ -460,55 +367,33 @@ local function scanReapers()
     return found
 end
 
-local GHOST_KEYWORDS = {
-    "ghost", "hantu", "spirit", "phantom", "wraith", "soul",
-    "specter", "spectre", "haunt", "poltergeist", "banshee",
-    "revenant", "demon", "devil", "monster", "zombie",
-    "skeleton", "skull", "shadow", "nightmare", "undead", "curse"
-}
-local GHOST_BLACKLIST = {
-    "ghostbuster", "ghost_shop", "ghostsign", "ghost_ui",
-    "soulmate", "soul_shop", "console", "shining", "souvenir"
-}
-local function isBlacklisted(name)
-    local low = name:lower()
-    for _, bl in ipairs(GHOST_BLACKLIST) do
-        if low:find(bl, 1, true) then return true end
-    end
-    return false
-end
-local function isGhostName(name)
-    local low = name:lower()
-    for _, kw in ipairs(GHOST_KEYWORDS) do
-        if low == kw
-           or low:find("^" .. kw .. "_")
-           or low:find("^" .. kw .. " ")
-           or low:find(" " .. kw .. " ")
-           or low:find(" " .. kw .. "$")
-           or low:find("^" .. kw .. "$") then
-            return true
-        end
-    end
-    return false
-end
+local GHOST_KEYWORDS = {"ghost","hantu","spirit","phantom","wraith","soul","specter","spectre","haunt","poltergeist","banshee","revenant","demon","devil","monster","zombie","skeleton","skull","shadow","nightmare","undead","curse"}
+local GHOST_BLACKLIST = {"ghostbuster","ghost_shop","ghostsign","ghost_ui","soulmate","soul_shop","console","shining","souvenir"}
+
 local function scanGhosts()
     local found = {}
     local seen = {}
     pcall(function()
         for _, obj in ipairs(workspace:GetDescendants()) do
-            if obj:IsA("Model") then
-                if not Players:GetPlayerFromCharacter(obj) then
-                    local n = obj.Name
-                    if not isBlacklisted(n) and isGhostName(n) then
-                        local hum = obj:FindFirstChildOfClass("Humanoid")
-                        if hum and hum.Health > 0 then
-                            if not seen[obj] then
+            if obj:IsA("Model") and not Players:GetPlayerFromCharacter(obj) then
+                local n = obj.Name:lower()
+                local bl = false
+                for _, b in ipairs(GHOST_BLACKLIST) do
+                    if n:find(b, 1, true) then bl = true; break end
+                end
+                if not bl then
+                    for _, kw in ipairs(GHOST_KEYWORDS) do
+                        if n == kw or n:find("^" .. kw .. "_") or n:find("^" .. kw .. " ")
+                           or n:find(" " .. kw .. " ") or n:find(" " .. kw .. "$") then
+                            local hum = obj:FindFirstChildOfClass("Humanoid")
+                            if hum and hum.Health > 0 and not seen[obj] then
                                 seen[obj] = true
-                                local part = getPart(obj)
+                                local part = extractPart(obj)
                                 if part then
-                                    table.insert(found, {model = obj, part = part, name = n})
+                                    table.insert(found, {model = obj, part = part, name = obj.Name})
                                 end
                             end
+                            break
                         end
                     end
                 end
@@ -518,50 +403,36 @@ local function scanGhosts()
     return found
 end
 
--- GOD MODE DESYNC
-local function getNearestGhost(maxRadius)
-    local hrp = getHRP()
-    if not hrp then return nil end
-    local ghosts = scanGhosts()
-    local nearest, minDist = nil, math.huge
-    for _, g in ipairs(ghosts) do
-        local dist = (g.part.Position - hrp.Position).Magnitude
-        if dist < minDist then
-            minDist = dist
-            nearest = g
-        end
-    end
-    if nearest and minDist <= maxRadius then
-        nearest.dist = minDist
-        return nearest
-    end
-    return nil
-end
-
+-- ═══════════════════════════════════════════════════════════
+-- GOD MODE / WALKSPEED
+-- ═══════════════════════════════════════════════════════════
 task.spawn(function()
     while true do
-        task.wait(0.05)
+        task.wait(0.3)
         if State.GodMode then
             local hrp = getHRP()
             if hrp then
-                local ghost = getNearestGhost(State.DesyncRadius)
-                if ghost then
+                local ghosts = scanGhosts()
+                local nearest, minDist = nil, math.huge
+                for _, g in ipairs(ghosts) do
+                    local d = (g.part.Position - hrp.Position).Magnitude
+                    if d < minDist then minDist = d; nearest = g end
+                end
+                if nearest and minDist <= State.DesyncRadius then
                     if getconnections then
-                        for _, obj in ipairs(ghost.model:GetDescendants()) do
-                            if obj:IsA("BasePart") then
-                                for _, conn in ipairs(getconnections(obj.Touched)) do
-                                    if conn.Disable then conn:Disable() end
+                        pcall(function()
+                            for _, obj in ipairs(nearest.model:GetChildren()) do
+                                if obj:IsA("BasePart") then
+                                    for _, conn in ipairs(getconnections(obj.Touched)) do
+                                        if conn.Disable then conn:Disable() end
+                                    end
                                 end
                             end
-                        end
+                        end)
                     end
-                    local myPos = hrp.Position
-                    local gPos = ghost.part.Position
-                    local dir = (myPos - gPos)
-                    if dir.Magnitude > 0 then dir = dir.Unit else dir = Vector3.new(1, 0, 0) end
-                    pcall(function()
-                        hrp.CFrame = CFrame.new(gPos + (dir * State.DesyncTPDistance))
-                    end)
+                    local dir = (hrp.Position - nearest.part.Position)
+                    if dir.Magnitude > 0 then dir = dir.Unit else dir = Vector3.new(1,0,0) end
+                    safeTP(nearest.part.Position + dir * State.DesyncTPDistance)
                     StatsData.DesyncCount += 1
                 end
             end
@@ -571,7 +442,7 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(0.3)
+        task.wait(0.5)
         if State.WalkSpeedEnabled then
             local hum = getHum()
             if hum and math.abs(hum.WalkSpeed - State.WalkSpeedValue) > 0.5 then
@@ -582,7 +453,7 @@ task.spawn(function()
 end)
 
 -- ═══════════════════════════════════════════════════════════
--- FIX HOLD/SKIP BUTTON
+-- PROMPT HANDLER
 -- ═══════════════════════════════════════════════════════════
 local function forceNoDelayPrompt(obj)
     if obj:IsA("ProximityPrompt") and State.NoDelay then
@@ -607,22 +478,6 @@ workspace.DescendantAdded:Connect(function(obj)
     end
 end)
 
-local function firePrompt(prompt)
-    if not prompt or not fireproximityprompt then return false end
-    local ok = false
-    pcall(function()
-        local old = prompt.HoldDuration
-        prompt.HoldDuration = 0
-        prompt.MaxActivationDistance = 9e9
-        prompt.Enabled = true
-        fireproximityprompt(prompt, 0)
-        task.wait(0.05)
-        if not State.NoDelay then prompt.HoldDuration = old end
-        ok = true
-    end)
-    return ok
-end
-
 -- ═══════════════════════════════════════════════════════════
 -- COLLECT ITEM (Multi Method)
 -- ═══════════════════════════════════════════════════════════
@@ -633,7 +488,7 @@ local function collectItem(data)
     local success = false
 
     local prompt = model:FindFirstChildWhichIsA("ProximityPrompt", true)
-    if not prompt and part then
+    if not prompt then
         prompt = part:FindFirstChildWhichIsA("ProximityPrompt")
     end
     if prompt then
@@ -642,7 +497,7 @@ local function collectItem(data)
             prompt.Enabled = true
             if State.NoDelay then prompt.HoldDuration = 0 end
         end)
-        if State.FirePrompt then
+        if State.FirePrompt and fireproximityprompt then
             pcall(function()
                 fireproximityprompt(prompt, 0)
                 success = true
@@ -671,26 +526,12 @@ local function collectItem(data)
         end)
     end
 
-    if not success then
-        pcall(function()
-            for _, obj in ipairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-                if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-                    local n = obj.Name:lower()
-                    if n:find("collect") or n:find("pickup") or n:find("trick")
-                       or n:find("treat") or n:find("pumpkin") then
-                        pcall(function() obj:FireServer(part) end)
-                        pcall(function() obj:InvokeServer(part) end)
-                        success = true
-                    end
-                end
-            end
-        end)
-    end
-
     return success
 end
 
--- ESP
+-- ═══════════════════════════════════════════════════════════
+-- ESP functions
+-- ═══════════════════════════════════════════════════════════
 local function createHL(model, color, name)
     if not model or not model.Parent then return end
     local e = model:FindFirstChild(name)
@@ -743,54 +584,45 @@ end
 local function removeESP(model)
     if not model then return end
     for _, c in ipairs(model:GetChildren()) do
-        if c.Name == "ItemESP_HL" or c.Name == "PumpkinESP_HL"
-           or c.Name == "ReaperESP_HL" or c.Name == "GhostESP_HL" then c:Destroy() end
+        if c.Name:find("ESP_HL") then c:Destroy() end
     end
     for _, p in ipairs(model:GetDescendants()) do
         if p:IsA("BasePart") then
-            local t1 = p:FindFirstChild("ItemESP_Tag")
-            local t2 = p:FindFirstChild("PumpkinESP_Tag")
-            local t3 = p:FindFirstChild("ReaperESP_Tag")
-            local t4 = p:FindFirstChild("GhostESP_Tag")
-            if t1 then t1:Destroy() end
-            if t2 then t2:Destroy() end
-            if t3 then t3:Destroy() end
-            if t4 then t4:Destroy() end
+            for _, t in ipairs(p:GetChildren()) do
+                if t.Name:find("ESP_Tag") then t:Destroy() end
+            end
         end
     end
 end
 
--- AUTO COLLECT ITEM LOOP
+-- ═══════════════════════════════════════════════════════════
+-- AUTO COLLECT LOOPS
+-- ═══════════════════════════════════════════════════════════
 task.spawn(function()
     while true do
         task.wait(State.CollectInterval)
-        if State.AutoCollect then
+        if State.AutoCollect and getHRP() then
             local items = scanItems()
-            local hrp = getHRP()
-            if #items > 0 and hrp then
+            if #items > 0 then
                 for _, d in ipairs(items) do
-                    d.dist = (d.part.Position - hrp.Position).Magnitude
+                    d.dist = (d.part.Position - getHRP().Position).Magnitude
                 end
                 table.sort(items, function(a, b) return a.dist < b.dist end)
                 local collected = 0
                 for _, d in ipairs(items) do
                     if d.dist <= State.MaxDistance and collected < State.MaxPerCycle then
                         if State.AutoTP and d.dist > 5 then
-                            pcall(function()
-                                hrp.CFrame = CFrame.new(d.part.Position + Vector3.new(0, 3, 0))
-                            end)
-                            task.wait(State.TPSettleDelay)
+                            safeTP(d.part.Position + Vector3.new(0, 3, 0))
+                            task.wait(0.3)
                         end
                         if collectItem(d) then
                             if not countedItems[d.model] then
                                 countedItems[d.model] = true
                                 StatsData.ItemsCollected += 1
-                                if NotifyUser then
-                                    NotifyUser("Collected", "TrickOrTreatItem collected!", "success")
-                                end
+                                if NotifyUser then NotifyUser("Collected", "TrickOrTreatItem!", "success") end
                             end
                             collected += 1
-                            task.wait(State.CollectDelay)
+                            task.wait(0.2)
                         end
                     end
                 end
@@ -799,37 +631,31 @@ task.spawn(function()
     end
 end)
 
--- AUTO COLLECT PUMPKIN LOOP
 task.spawn(function()
     while true do
         task.wait(State.PumpkinInterval)
-        if State.AutoCollectPumpkin then
+        if State.AutoCollectPumpkin and getHRP() then
             local pumpkins = scanPumpkins()
-            local hrp = getHRP()
-            if #pumpkins > 0 and hrp then
+            if #pumpkins > 0 then
                 for _, d in ipairs(pumpkins) do
-                    d.dist = (d.part.Position - hrp.Position).Magnitude
+                    d.dist = (d.part.Position - getHRP().Position).Magnitude
                 end
                 table.sort(pumpkins, function(a, b) return a.dist < b.dist end)
                 local collected = 0
                 for _, d in ipairs(pumpkins) do
                     if d.dist <= State.PumpkinMaxDistance and collected < State.PumpkinMaxPerCycle then
                         if State.PumpkinTP and d.dist > 5 then
-                            pcall(function()
-                                hrp.CFrame = CFrame.new(d.part.Position + Vector3.new(0, 3, 0))
-                            end)
-                            task.wait(State.TPSettleDelay)
+                            safeTP(d.part.Position + Vector3.new(0, 3, 0))
+                            task.wait(0.3)
                         end
                         if collectItem(d) then
                             if not countedPumpkins[d.model] then
                                 countedPumpkins[d.model] = true
                                 StatsData.PumpkinsCollected += 1
-                                if NotifyUser then
-                                    NotifyUser("Pumpkin", "Pumpkin collected!", "success")
-                                end
+                                if NotifyUser then NotifyUser("Pumpkin", "Pumpkin collected!", "success") end
                             end
                             collected += 1
-                            task.wait(State.CollectDelay)
+                            task.wait(0.2)
                         end
                     end
                 end
@@ -838,10 +664,12 @@ task.spawn(function()
     end
 end)
 
--- SPAWN COUNTER (item + pumpkin)
+-- ═══════════════════════════════════════════════════════════
+-- SPAWN COUNTER (1.5s interval)
+-- ═══════════════════════════════════════════════════════════
 task.spawn(function()
     while true do
-        task.wait(0.5)
+        task.wait(1.5)
         local items = scanItems()
         StatsData.ItemsFound = #items
         for _, d in ipairs(items) do
@@ -850,80 +678,80 @@ task.spawn(function()
                 StatsData.ItemsSpawned += 1
             end
         end
-        local currentSet = {}
-        for _, d in ipairs(items) do currentSet[d.model] = true end
-        for model in pairs(lastSeenItems) do
-            if not currentSet[model] then lastSeenItems[model] = nil end
+        local curI = {}
+        for _, d in ipairs(items) do curI[d.model] = true end
+        for m in pairs(lastSeenItems) do
+            if not curI[m] then lastSeenItems[m] = nil end
         end
-        for model in pairs(countedItems) do
-            if not model.Parent then countedItems[model] = nil end
+        for m in pairs(countedItems) do
+            if not m.Parent then countedItems[m] = nil end
         end
 
-        local pumpkins = scanPumpkins()
-        StatsData.PumpkinsFound = #pumpkins
-        for _, d in ipairs(pumpkins) do
+        local pk = scanPumpkins()
+        StatsData.PumpkinsFound = #pk
+        for _, d in ipairs(pk) do
             if not lastSeenPumpkins[d.model] then
                 lastSeenPumpkins[d.model] = true
                 StatsData.PumpkinsSpawned += 1
             end
         end
         local curP = {}
-        for _, d in ipairs(pumpkins) do curP[d.model] = true end
-        for model in pairs(lastSeenPumpkins) do
-            if not curP[model] then lastSeenPumpkins[model] = nil end
+        for _, d in ipairs(pk) do curP[d.model] = true end
+        for m in pairs(lastSeenPumpkins) do
+            if not curP[m] then lastSeenPumpkins[m] = nil end
         end
-        for model in pairs(countedPumpkins) do
-            if not model.Parent then countedPumpkins[model] = nil end
+        for m in pairs(countedPumpkins) do
+            if not m.Parent then countedPumpkins[m] = nil end
         end
     end
 end)
 
--- ESP LOOP
+-- ═══════════════════════════════════════════════════════════
+-- ESP LOOP (1s interval)
+-- ═══════════════════════════════════════════════════════════
 task.spawn(function()
     while true do
-        task.wait(0.5)
-        local items = scanItems()
+        task.wait(1)
 
         if State.ItemESP then
+            local items = scanItems()
             local cur = {}
             for _, d in ipairs(items) do cur[d.model] = d end
-            for m, _ in pairs(itemCache) do
+            for m in pairs(itemCache) do
                 if not cur[m] or not m.Parent then
-                    removeESP(m)
-                    itemCache[m] = nil
+                    removeESP(m); itemCache[m] = nil
                 end
             end
             for m, d in pairs(cur) do
                 if not itemCache[m] then
                     createHL(m, C.Pri, "ItemESP_HL")
-                    createTag(d.part, d.model.Name, C.Pri, "ItemESP_Tag")
+                    createTag(d.part, m.Name, C.Pri, "ItemESP_Tag")
                     itemCache[m] = d
                 end
             end
-        else
-            for m, _ in pairs(itemCache) do removeESP(m) end
+        elseif next(itemCache) then
+            for m in pairs(itemCache) do removeESP(m) end
             itemCache = {}
         end
 
         if State.PumpkinESP then
-            local ps = scanPumpkins()
+            local pk = scanPumpkins()
             local cur = {}
-            for _, d in ipairs(ps) do cur[d.model] = d end
-            for m, _ in pairs(pumpkinCache) do
+            for _, d in ipairs(pk) do cur[d.model] = d end
+            for m in pairs(pumpkinCache) do
                 if not cur[m] or not m.Parent then
-                    removeESP(m)
-                    pumpkinCache[m] = nil
+                    removeESP(m); pumpkinCache[m] = nil
                 end
             end
             for m, d in pairs(cur) do
                 if not pumpkinCache[m] then
                     createHL(m, C.Orng, "PumpkinESP_HL")
-                    createTag(d.part, d.model.Name, C.Orng, "PumpkinESP_Tag")
+                    createTag(d.part, m.Name, C.Orng, "PumpkinESP_Tag")
                     pumpkinCache[m] = d
                 end
             end
-        else
-            for m, _ in pairs(pumpkinCache) do removeESP(m) end
+        elseif next(pumpkinCache) then
+            for m in pairs(pumpkinCache) do removeESP(m) end
             pumpkinCache = {}
         end
 
@@ -932,23 +760,21 @@ task.spawn(function()
             StatsData.ReapersFound = #rs
             local cur = {}
             for _, d in ipairs(rs) do cur[d.model] = d end
-            for m, _ in pairs(reaperCache) do
+            for m in pairs(reaperCache) do
                 if not cur[m] or not m.Parent then
-                    removeESP(m)
-                    reaperCache[m] = nil
+                    removeESP(m); reaperCache[m] = nil
                 end
             end
             for m, d in pairs(cur) do
                 if not reaperCache[m] then
                     createHL(m, C.Red, "ReaperESP_HL")
-                    createTag(d.part, d.model.Name, C.Red, "ReaperESP_Tag")
+                    createTag(d.part, m.Name, C.Red, "ReaperESP_Tag")
                     reaperCache[m] = d
                 end
             end
-        else
-            for m, _ in pairs(reaperCache) do removeESP(m) end
+        elseif next(reaperCache) then
+            for m in pairs(reaperCache) do removeESP(m) end
             reaperCache = {}
-            StatsData.ReapersFound = 0
         end
 
         if State.GhostESP then
@@ -956,10 +782,9 @@ task.spawn(function()
             StatsData.GhostsFound = #gs
             local cur = {}
             for _, d in ipairs(gs) do cur[d.model] = d end
-            for m, _ in pairs(ghostCache) do
+            for m in pairs(ghostCache) do
                 if not cur[m] or not m.Parent then
-                    removeESP(m)
-                    ghostCache[m] = nil
+                    removeESP(m); ghostCache[m] = nil
                 end
             end
             for m, d in pairs(cur) do
@@ -969,18 +794,17 @@ task.spawn(function()
                     ghostCache[m] = d
                 end
             end
-        else
-            for m, _ in pairs(ghostCache) do removeESP(m) end
+        elseif next(ghostCache) then
+            for m in pairs(ghostCache) do removeESP(m) end
             ghostCache = {}
-            StatsData.GhostsFound = 0
         end
     end
 end)
 
--- Distance updater
+-- Distance updater (0.5s)
 task.spawn(function()
     while true do
-        task.wait(0.15)
+        task.wait(0.5)
         if State.ShowDistance then
             local hrp = getHRP()
             if hrp then
@@ -1014,27 +838,23 @@ end)
 -- EVENT TIMER
 local function getEventInfo()
     local t = os.date("*t")
-    local hour = t.hour
-    local min = t.min
-    local sec = t.sec
+    local hour, min, sec = t.hour, t.min, t.sec
     local currentMin = hour * 60 + min
-    local nextEventMin
-    if min < 30 then nextEventMin = hour * 60 + 30 else nextEventMin = (hour + 1) * 60 end
+    local nextEventMin = (min < 30) and (hour * 60 + 30) or ((hour + 1) * 60)
     local secondsToEvent = (nextEventMin - currentMin) * 60 - sec
-    local prevEventMin
-    if min < 30 then prevEventMin = hour * 60 else prevEventMin = hour * 60 + 30 end
+    local prevEventMin = (min < 30) and (hour * 60) or (hour * 60 + 30)
     local secondsSinceEvent = (currentMin - prevEventMin) * 60 + sec
-    local cdHour = math.floor(secondsToEvent / 3600)
-    local cdMin = math.floor((secondsToEvent % 3600) / 60)
-    local cdSec = secondsToEvent % 60
-    local nextEventHour = math.floor(nextEventMin / 60) % 24
-    local nextEventMinute = nextEventMin % 60
-    local nextEventHour12 = nextEventHour % 12
-    if nextEventHour12 == 0 then nextEventHour12 = 12 end
-    local nextEventAmPm = nextEventHour >= 12 and "PM" or "AM"
+    local cdH = math.floor(secondsToEvent / 3600)
+    local cdM = math.floor((secondsToEvent % 3600) / 60)
+    local cdS = secondsToEvent % 60
+    local nextH = math.floor(nextEventMin / 60) % 24
+    local nextM = nextEventMin % 60
+    local nextH12 = nextH % 12
+    if nextH12 == 0 then nextH12 = 12 end
+    local ap = nextH >= 12 and "PM" or "AM"
     return {
-        countdownStr = string.format("%02d:%02d:%02d", cdHour, cdMin, cdSec),
-        nextEventStr = string.format("%02d:%02d %s", nextEventHour12, nextEventMinute, nextEventAmPm),
+        countdownStr = string.format("%02d:%02d:%02d", cdH, cdM, cdS),
+        nextEventStr = string.format("%02d:%02d %s", nextH12, nextM, ap),
         isEventActive = secondsSinceEvent <= 60,
         percent = 1 - (secondsToEvent / (30 * 60)),
     }
@@ -1140,39 +960,8 @@ NotifyUser = function(title, msg, tp)
     end)
 end
 
-local LiveLog = {}
-local liveRef = nil
 Log = function(txt, tp)
-    tp = tp or "info"
-    table.insert(LiveLog, {t = "[" .. os.date("%H:%M:%S") .. "] " .. txt, tp = tp})
-    if #LiveLog > 80 then table.remove(LiveLog, 1) end
-    if liveRef and liveRef.Parent then
-        task.spawn(function()
-            pcall(function()
-                for _, c in ipairs(liveRef:GetChildren()) do
-                    if c:IsA("TextLabel") then c:Destroy() end
-                end
-                local cm = {success=C.Grn, error=C.Red, warn=C.Yel, info=C.Cyn}
-                for i, e in ipairs(LiveLog) do
-                    local l = Instance.new("TextLabel")
-                    l.Size = UDim2.new(1,-8,0,18)
-                    l.Position = UDim2.new(0,4,0,(i-1)*20)
-                    l.BackgroundTransparency = 1
-                    l.Text = e.t
-                    l.TextColor3 = cm[e.tp] or C.Cyn
-                    l.TextSize = 12
-                    l.Font = Enum.Font.Gotham
-                    l.TextXAlignment = Enum.TextXAlignment.Left
-                    l.TextTruncate = Enum.TextTruncate.AtEnd
-                    l.ZIndex = 15
-                    l.Parent = liveRef
-                end
-                liveRef.CanvasSize = UDim2.new(0,0,0,#LiveLog*20+8)
-                liveRef.CanvasPosition = Vector2.new(0, #LiveLog*20)
-            end)
-        end)
-    end
-    print("[LIVE]["..tp:upper().."] "..txt)
+    print("[Oc1DvHUB]["..(tp or "info"):upper().."] "..txt)
 end
 
 local TW, TH = 480, 360
@@ -1213,137 +1002,6 @@ mst.Transparency = 0.35
 mst.Parent = Main
 track(mst, "Color")
 
-local effectsLayer = Instance.new("Frame", Main)
-effectsLayer.Size = UDim2.new(1,0,1,0)
-effectsLayer.BackgroundTransparency = 1
-effectsLayer.ClipsDescendants = true
-effectsLayer.ZIndex = 2
-Instance.new("UICorner", effectsLayer).CornerRadius = UDim.new(0,16)
-
-local gradLayer = Instance.new("Frame", effectsLayer)
-gradLayer.Size = UDim2.new(1,0,1,0)
-gradLayer.BackgroundColor3 = Color3.fromRGB(255,255,255)
-gradLayer.BackgroundTransparency = 0.78
-gradLayer.BorderSizePixel = 0
-gradLayer.ZIndex = 3
-Instance.new("UICorner", gradLayer).CornerRadius = UDim.new(0,16)
-local gradBg = Instance.new("UIGradient", gradLayer)
-gradBg.Rotation = 45
-gradBg.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.0, Color3.fromRGB(255, 140, 70)),
-    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 200, 120)),
-    ColorSequenceKeypoint.new(1.0, Color3.fromRGB(255, 100, 50)),
-})
-gradBg.Transparency = NumberSequence.new({
-    NumberSequenceKeypoint.new(0, 0.85),
-    NumberSequenceKeypoint.new(0.5, 0.5),
-    NumberSequenceKeypoint.new(1, 0.85),
-})
-task.spawn(function()
-    while gradLayer.Parent do
-        for i = 0, 1, 0.015 do
-            if not gradLayer.Parent then break end
-            gradBg.Rotation = 45 + i * 360
-            task.wait(0.03)
-        end
-    end
-end)
-
-local bgOrbs = {}
-for i = 1, 6 do
-    local orb = Instance.new("ImageLabel", effectsLayer)
-    local sz = math.random(60, 140)
-    orb.Size = UDim2.new(0, sz, 0, sz)
-    orb.Position = UDim2.new(math.random(), 0, math.random(), 0)
-    orb.BackgroundTransparency = 1
-    orb.Image = "rbxassetid://5028857084"
-    orb.ImageColor3 = Color3.fromRGB(255, 130, 60)
-    orb.ImageTransparency = math.random(70, 90) / 100
-    orb.ZIndex = 4
-    table.insert(bgOrbs, {obj = orb, phase = math.random() * math.pi * 2})
-end
-
-task.spawn(function()
-    while effectsLayer.Parent do
-        local t = os.clock()
-        for _, o in ipairs(bgOrbs) do
-            if o.obj and o.obj.Parent then
-                local x = 0.5 + math.sin(t * 0.3 + o.phase) * 0.4
-                local y = 0.5 + math.cos(t * 0.25 + o.phase) * 0.4
-                o.obj.Position = UDim2.new(x, 0, y, 0)
-                o.obj.ImageTransparency = 0.75 + math.sin(t + o.phase) * 0.15
-            end
-        end
-        task.wait(0.03)
-    end
-end)
-
-local pulseStroke = Instance.new("UIStroke", Main)
-pulseStroke.Color = C.Pri
-pulseStroke.Thickness = 1.5
-pulseStroke.Transparency = 0.5
-pulseStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-pulseStroke.Parent = Main
-track(pulseStroke, "Color")
-
-task.spawn(function()
-    while Main.Parent do
-        local t = os.clock()
-        pulseStroke.Transparency = 0.5 + math.sin(t * 2) * 0.25
-        pulseStroke.Thickness = 1.5 + math.sin(t * 2) * 0.5
-        task.wait(0.05)
-    end
-end)
-
-local halloweenLayer = Instance.new("Frame", Main)
-halloweenLayer.Size = UDim2.new(1, 0, 1, 0)
-halloweenLayer.BackgroundTransparency = 1
-halloweenLayer.ClipsDescendants = true
-halloweenLayer.ZIndex = 5
-Instance.new("UICorner", halloweenLayer).CornerRadius = UDim.new(0, 16)
-
-local halloweenEmoji = {"🎃", "👻", "🦇", "🕷️", "💀", "🕸️", "🍬"}
-
-local halloweenParticles = {}
-for i = 1, 12 do
-    local p = Instance.new("TextLabel", halloweenLayer)
-    p.Size = UDim2.fromOffset(24, 24)
-    p.BackgroundTransparency = 1
-    p.Text = halloweenEmoji[(i - 1) % #halloweenEmoji + 1]
-    p.TextSize = math.random(14, 22)
-    p.TextTransparency = math.random(60, 85) / 100
-    p.Position = UDim2.new(math.random(), 0, 1.15, 0)
-    p.Rotation = math.random(-30, 30)
-    p.ZIndex = 6
-    table.insert(halloweenParticles, {
-        obj = p,
-        speed = math.random(15, 45) / 1000,
-        startX = math.random(),
-        offset = math.random() * math.pi * 2,
-    })
-end
-
-task.spawn(function()
-    while Main.Parent do
-        for _, hp in ipairs(halloweenParticles) do
-            if hp.obj and hp.obj.Parent then
-                local y = hp.obj.Position.Y.Scale - hp.speed
-                if y < -0.15 then
-                    y = 1.15
-                    hp.startX = math.random()
-                    hp.obj.Text = halloweenEmoji[math.random(1, #halloweenEmoji)]
-                    hp.obj.TextSize = math.random(14, 22)
-                    hp.obj.TextTransparency = math.random(60, 85) / 100
-                end
-                local wobble = math.sin(tick() * 1.5 + hp.offset) * 0.04
-                hp.obj.Position = UDim2.new(hp.startX + wobble, 0, y, 0)
-                hp.obj.Rotation = math.sin(tick() * 2 + hp.offset) * 25
-            end
-        end
-        task.wait(0.03)
-    end
-end)
-
 local TH_H = 40
 local Title = Instance.new("Frame", Main)
 Title.Size = UDim2.new(1,0,0,TH_H)
@@ -1373,16 +1031,6 @@ Ttl.TextSize = 14
 Ttl.Font = Enum.Font.GothamBold
 Ttl.TextXAlignment = Enum.TextXAlignment.Left
 Ttl.ZIndex = 21
-
-task.spawn(function()
-    local hue = 0
-    while Main.Parent do
-        hue = (hue + 0.008) % 1
-        local c = Color3.fromHSV(0.08 + math.sin(hue * math.pi * 2) * 0.35, 0.9, 1)
-        pcall(function() mst.Color = c end)
-        task.wait(0.05)
-    end
-end)
 
 local DOT_SIZE = 12
 local DOT_Y = 0.5
@@ -1484,9 +1132,8 @@ end)
 GrnB.MouseButton1Click:Connect(function()
     sfx()
     S.MiniMode = not S.MiniMode
-    local targetW, targetH
-    if S.MiniMode then targetW, targetH = TW, TH else targetW, targetH = TW_NORMAL, TH_NORMAL end
-    TS:Create(Main, TweenInfo.new(0.3, Enum.EasingStyle.Quint), { Size = UDim2.new(0, targetW, 0, targetH) }):Play()
+    local tW, tH = (S.MiniMode and TW or TW_NORMAL), (S.MiniMode and TH or TH_NORMAL)
+    TS:Create(Main, TweenInfo.new(0.3, Enum.EasingStyle.Quint), { Size = UDim2.new(0, tW, 0, tH) }):Play()
     NotifyUser("Size", S.MiniMode and "Mini" or "Normal", "info")
 end)
 FB.MouseButton1Click:Connect(doShow)
@@ -1621,14 +1268,8 @@ THt.TextXAlignment = Enum.TextXAlignment.Left
 THt.ZIndex = 12
 
 local tabData = {
-    {name="RUMAH", icon=IC.Rumah},
-    {name="COLLECT", icon=IC.Collect},
-    {name="ESP", icon=IC.ESP},
-    {name="TELEPORT", icon=IC.TP},
-    {name="EVENT", icon=IC.Event},
-    {name="MISC", icon=IC.Misc},
-    {name="TEMA", icon=IC.Tema},
-    {name="CREDITS", icon=IC.Credits},
+    {name="RUMAH"}, {name="COLLECT"}, {name="ESP"}, {name="TELEPORT"},
+    {name="EVENT"}, {name="MISC"}, {name="TEMA"}, {name="CREDITS"},
 }
 
 local tabContent = {}
@@ -1668,9 +1309,7 @@ for i, t in ipairs(tabData) do
     b.TextSize = 9
     b.Font = Enum.Font.GothamMedium
     b.AutoButtonColor = false
-    b.Active = true
     b.ZIndex = 100
-    b.TextXAlignment = Enum.TextXAlignment.Center
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,8)
     tabBtns[t.name] = b
     if i == 1 then track(b, "BackgroundColor3") end
@@ -1799,7 +1438,7 @@ local function Toggle(parent, title, initial, cb)
         bg.BackgroundColor3 = state and C.Grn or Color3.fromRGB(60,60,68)
         if cb then pcall(cb, state) end
         if state then
-            NotifyUser("Feature Enabled", title .. " activated", "success")
+            NotifyUser("Enabled", title, "success")
         end
     end)
     return f
@@ -1854,14 +1493,10 @@ local function Slider(parent, title, mn, mx, df, cb)
 
     local dr = false
     bar.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            dr = true
-        end
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dr = true end
     end)
     UIS.InputEnded:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            dr = false
-        end
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dr = false end
     end)
     UIS.InputChanged:Connect(function(i)
         if dr and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
@@ -1877,7 +1512,7 @@ local function Slider(parent, title, mn, mx, df, cb)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- FILL: RUMAH
+-- FILL RUMAH
 -- ═══════════════════════════════════════════════════════════
 local tr = tabContent.RUMAH
 
@@ -1946,7 +1581,6 @@ uptimeLbl.TextXAlignment = Enum.TextXAlignment.Left
 uptimeLbl.ZIndex = 12
 
 Sect(tr, "LIVE STATS")
-
 local statsCard = Instance.new("Frame", tr)
 statsCard.Size = UDim2.new(1,-4,0,58)
 statsCard.BackgroundColor3 = C.Card
@@ -1991,7 +1625,6 @@ local pingVal = mkStatBox(statsCard, 116, "PING")
 local playerVal = mkStatBox(statsCard, 224, "PLAYERS")
 
 Sect(tr, "SERVER INFO")
-
 local infoCard = Instance.new("Frame", tr)
 infoCard.Size = UDim2.new(1,-4,0,86)
 infoCard.BackgroundColor3 = C.Card
@@ -2046,78 +1679,64 @@ end)
 
 task.spawn(function()
     while SG.Parent do
-        task.wait(1)
+        task.wait(2)
         pcall(function()
             local t = os.date("*t")
             local h = t.hour
-            local clockStr = string.format("%02d:%02d:%02d", t.hour, t.min, t.sec)
-            local greet
-            if h < 12 then greet = "Selamat Pagi"
-            elseif h < 15 then greet = "Selamat Siang"
-            elseif h < 18 then greet = "Selamat Sore"
-            else greet = "Selamat Malam" end
-            clockLbl.Text = clockStr
+            local greet = (h<12 and "Selamat Pagi") or (h<15 and "Selamat Siang") or (h<18 and "Selamat Sore") or "Selamat Malam"
+            clockLbl.Text = string.format("%02d:%02d:%02d", t.hour, t.min, t.sec)
             greetLbl.Text = greet .. ", " .. (LP.DisplayName or LP.Name) .. "!"
             local el = os.time() - S.StartTime
             uptimeLbl.Text = string.format("Playtime: %02d:%02d:%02d", math.floor(el/3600), math.floor((el%3600)/60), el%60)
             fpsVal.Text = tostring(curFPS)
             pcall(function()
-                local ping = Stats.Network.ServerStatsItem["Data Ping"]:GetValue()
-                pingVal.Text = math.floor(ping) .. "ms"
+                pingVal.Text = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue()) .. "ms"
             end)
             playerVal.Text = #Players:GetPlayers() .. "/" .. Players.MaxPlayers
-            if S.GameName ~= "Loading..." then gameVal.Text = S.GameName end
         end)
     end
 end)
 
--- ═══════════════════════════════════════════════════════════
--- FILL: COLLECT
--- ═══════════════════════════════════════════════════════════
+-- FILL COLLECT
 local tcol = tabContent.COLLECT
 Sect(tcol, "TREAT COLLECT")
 Toggle(tcol, "Auto Collect Item", true, function(v) State.AutoCollect = v end)
 Toggle(tcol, "Auto TP", true, function(v) State.AutoTP = v end)
 Slider(tcol, "Max Distance", 50, 2000, 500, function(v) State.MaxDistance = v end)
-Slider(tcol, "Collect Interval", 1, 10, 1, function(v) State.CollectInterval = v end)
+Slider(tcol, "Interval", 1, 10, 1.5, function(v) State.CollectInterval = v end)
 
 Sect(tcol, "PUMPKIN COLLECT")
 Toggle(tcol, "Auto Collect Pumpkin", true, function(v) State.AutoCollectPumpkin = v end)
 Toggle(tcol, "Pumpkin Auto TP", true, function(v) State.PumpkinTP = v end)
 Slider(tcol, "Pumpkin Max Distance", 50, 2000, 500, function(v) State.PumpkinMaxDistance = v end)
-Slider(tcol, "Pumpkin Interval", 1, 10, 1, function(v) State.PumpkinInterval = v end)
+Slider(tcol, "Pumpkin Interval", 1, 10, 1.5, function(v) State.PumpkinInterval = v end)
 
 Sect(tcol, "METHOD")
 Toggle(tcol, "FirePrompt", true, function(v) State.FirePrompt = v end)
 Toggle(tcol, "No Delay Button", true, function(v) State.NoDelay = v end)
 
--- ═══════════════════════════════════════════════════════════
--- FILL: ESP
--- ═══════════════════════════════════════════════════════════
+-- FILL ESP
 local te = tabContent.ESP
 Sect(te, "ESP")
-
 Toggle(te, "Item ESP", true, function(v)
     State.ItemESP = v
-    if not v then for m, _ in pairs(itemCache) do removeESP(m) end itemCache = {} end
+    if not v then for m in pairs(itemCache) do removeESP(m) end itemCache = {} end
 end)
 Toggle(te, "Pumpkin ESP", true, function(v)
     State.PumpkinESP = v
-    if not v then for m, _ in pairs(pumpkinCache) do removeESP(m) end pumpkinCache = {} end
+    if not v then for m in pairs(pumpkinCache) do removeESP(m) end pumpkinCache = {} end
 end)
 Toggle(te, "Reaper ESP", true, function(v)
     State.ReaperESP = v
-    if not v then for m, _ in pairs(reaperCache) do removeESP(m) end reaperCache = {} end
+    if not v then for m in pairs(reaperCache) do removeESP(m) end reaperCache = {} end
 end)
-Toggle(te, "Ghost ESP (All)", false, function(v)
+Toggle(te, "Ghost ESP", false, function(v)
     State.GhostESP = v
-    if not v then for m, _ in pairs(ghostCache) do removeESP(m) end ghostCache = {} end
+    if not v then for m in pairs(ghostCache) do removeESP(m) end ghostCache = {} end
 end)
 Toggle(te, "Show Distance", true, function(v) State.ShowDistance = v end)
 
--- ═══════════════════════════════════════════════════════════
--- FILL: TELEPORT
--- ═══════════════════════════════════════════════════════════
+-- FILL TELEPORT
 local tp = tabContent.TELEPORT
 local currentCat = ""
 for i, loc in ipairs(TP_LOCATIONS) do
@@ -2140,28 +1759,15 @@ for i, loc in ipairs(TP_LOCATIONS) do
     trackSearch(b, loc.name)
     b.MouseButton1Click:Connect(function()
         sfx()
-        local hrp = getHRP()
-        if hrp then
-            pcall(function()
-                hrp.CFrame = CFrame.new(loc.pos + Vector3.new(0, 3, 0))
-            end)
+        if safeTP(loc.pos + Vector3.new(0, 3, 0)) then
             Log("TP: " .. loc.name, "success")
-            local oldTxt = b.Text
-            b.Text = "TELEPORTED!"
-            b.BackgroundColor3 = C.Grn
-            task.wait(0.4)
-            b.Text = oldTxt
-            b.BackgroundColor3 = C.Card
         end
     end)
 end
 
--- ═══════════════════════════════════════════════════════════
--- FILL: EVENT
--- ═══════════════════════════════════════════════════════════
+-- FILL EVENT
 local tEv = tabContent.EVENT
 Sect(tEv, "EVENT TIMER")
-
 local eventCard = Instance.new("Frame", tEv)
 eventCard.Size = UDim2.new(1,-4,0,80)
 eventCard.BackgroundColor3 = C.Card
@@ -2210,7 +1816,6 @@ eventStatusLbl.TextXAlignment = Enum.TextXAlignment.Center
 eventStatusLbl.ZIndex = 11
 
 Sect(tEv, "JAM DIGITAL")
-
 local clockCard = Instance.new("Frame", tEv)
 clockCard.Size = UDim2.new(1,-4,0,60)
 clockCard.BackgroundColor3 = C.Card
@@ -2242,7 +1847,6 @@ dateLbl2.TextXAlignment = Enum.TextXAlignment.Center
 dateLbl2.ZIndex = 11
 
 Sect(tEv, "STATISTIK")
-
 local function mkStatRow(parent, title, color)
     local bx = Instance.new("Frame", parent)
     bx.Size = UDim2.new(1,-4,0,36)
@@ -2280,7 +1884,6 @@ local statPumpkinColVal = mkStatRow(tEv, "Total Pumpkin Collected", C.Orng)
 local statPumpkinSpawnVal = mkStatRow(tEv, "Total Pumpkin Spawn", C.Yel)
 
 Sect(tEv, "GHOST LIST")
-
 local ghostListCard = Instance.new("Frame", tEv)
 ghostListCard.Size = UDim2.new(1,-4,0,140)
 ghostListCard.BackgroundColor3 = C.Card
@@ -2300,31 +1903,20 @@ ghostScroll.CanvasSize = UDim2.new(0,0,0,0)
 ghostScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
 ghostScroll.ZIndex = 11
 
-local ghostListLay = Instance.new("UIListLayout", ghostScroll)
-ghostListLay.Padding = UDim.new(0,2)
-ghostListLay.SortOrder = Enum.SortOrder.LayoutOrder
-
-local ghostListPad = Instance.new("UIPadding", ghostScroll)
-ghostListPad.PaddingTop = UDim.new(0,4)
-ghostListPad.PaddingLeft = UDim.new(0,6)
-ghostListPad.PaddingRight = UDim.new(0,6)
-
 task.spawn(function()
     while SG.Parent do
-        task.wait(0.5)
+        task.wait(1.5)
         pcall(function()
             local t = os.date("*t")
-            local hour12 = t.hour % 12
-            if hour12 == 0 then hour12 = 12 end
-            local ampm = t.hour >= 12 and "PM" or "AM"
-            clockLbl2.Text = string.format("%02d:%02d:%02d %s", hour12, t.min, t.sec, ampm)
+            local h12 = t.hour % 12; if h12 == 0 then h12 = 12 end
+            local ap = t.hour >= 12 and "PM" or "AM"
+            clockLbl2.Text = string.format("%02d:%02d:%02d %s", h12, t.min, t.sec, ap)
             dateLbl2.Text = os.date("%A, %d %B %Y")
 
             local ev = getEventInfo()
             eventTimerLbl.Text = ev.countdownStr
             eventStatusLbl.Text = "Next: " .. ev.nextEventStr
             eventProgressFill.Size = UDim2.new(math.clamp(ev.percent, 0, 1), 0, 1, 0)
-
             if ev.isEventActive then
                 eventTimerLbl.TextColor3 = C.Grn
                 eventStatusLbl.Text = "EVENT ACTIVE!"
@@ -2348,11 +1940,10 @@ task.spawn(function()
                     local gs = scanGhosts()
                     if #gs > 0 then
                         for i, g in ipairs(gs) do
-                            local dist = (g.part.Position - hrp.Position).Magnitude
                             local row = Instance.new("TextLabel", ghostScroll)
                             row.Size = UDim2.new(1,-4,0,14)
                             row.BackgroundTransparency = 1
-                            row.Text = string.format("%s - %d studs", g.name, math.floor(dist))
+                            row.Text = string.format("%s - %d studs", g.name, math.floor((g.part.Position - hrp.Position).Magnitude))
                             row.TextColor3 = C.Pur
                             row.TextSize = 9
                             row.Font = Enum.Font.Gotham
@@ -2367,7 +1958,6 @@ task.spawn(function()
                         empty.Text = "No ghosts detected"
                         empty.TextColor3 = C.Dim
                         empty.TextSize = 9
-                        empty.Font = Enum.Font.Gotham
                         empty.ZIndex = 12
                     end
                 end
@@ -2378,19 +1968,15 @@ task.spawn(function()
                 off.Text = "Ghost ESP is OFF"
                 off.TextColor3 = C.Dim
                 off.TextSize = 9
-                off.Font = Enum.Font.Gotham
                 off.ZIndex = 12
             end
         end)
     end
 end)
 
--- ═══════════════════════════════════════════════════════════
--- FILL: MISC
--- ═══════════════════════════════════════════════════════════
+-- FILL MISC
 local tm = tabContent.MISC
 Sect(tm, "WALKSPEED")
-
 Toggle(tm, "Enable WalkSpeed", false, function(v)
     State.WalkSpeedEnabled = v
     if not v then
@@ -2418,7 +2004,7 @@ Toggle(tm, "Noclip", false, function(v) State.Noclip = v end)
 
 Sect(tm, "ANTI-AFK")
 Toggle(tm, "Anti-AFK", true, function(v) State.AntiAFK = v end)
-Slider(tm, "AFK Interval", 15, 120, 60, function(v) State.AntiAFKInterval = v end)
+Slider(tm, "AFK Interval", 15, 120, 90, function(v) State.AntiAFKInterval = v end)
 
 Sect(tm, "UTILITY")
 Btn(tm, "Rejoin Server", function()
@@ -2430,17 +2016,13 @@ Btn(tm, "Copy Discord Invite", function()
 end)
 
 Btn(tm, "Unload UI", function()
-    S.FPRunning = false
     task.wait(0.3)
     SG:Destroy()
 end, Color3.fromRGB(150, 60, 70))
 
--- ═══════════════════════════════════════════════════════════
--- FILL: TEMA
--- ═══════════════════════════════════════════════════════════
+-- FILL TEMA
 local ttem = tabContent.TEMA
 Sect(ttem, "BACKGROUND IMAGE")
-
 local themeBtns = {}
 for i, bg in ipairs(BG_LIST) do
     local b = Instance.new("TextButton", ttem)
@@ -2508,7 +2090,6 @@ Btn(ttem, "Ganti Background", function()
 end, Color3.fromRGB(60,120,90))
 
 Sect(ttem, "WARNA UI")
-
 local hueFrame = Instance.new("Frame", ttem)
 hueFrame.Size = UDim2.new(1,-4,0,60)
 hueFrame.BackgroundColor3 = C.Card
@@ -2577,14 +2158,11 @@ local function updateHue(px)
 end
 hueBar.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        hueDrag = true
-        updateHue(i.Position.X)
+        hueDrag = true; updateHue(i.Position.X)
     end
 end)
 UIS.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        hueDrag = false
-    end
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then hueDrag = false end
 end)
 UIS.InputChanged:Connect(function(i)
     if hueDrag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
@@ -2603,11 +2181,8 @@ Slider(ttem, "Kegelapan BG (x100)", 0, 80, math.floor(S.BGBrightness*100), funct
     ovl.BackgroundTransparency = S.BGBrightness
 end)
 
--- ═══════════════════════════════════════════════════════════
--- FILL: CREDITS
--- ═══════════════════════════════════════════════════════════
+-- FILL CREDITS
 local tcr = tabContent.CREDITS
-
 local creditCard = Instance.new("Frame", tcr)
 creditCard.Size = UDim2.new(1,-4,0,130)
 creditCard.BackgroundColor3 = C.Card
@@ -2615,12 +2190,8 @@ creditCard.BackgroundTransparency = 0.25
 creditCard.BorderSizePixel = 0
 creditCard.ZIndex = 10
 Instance.new("UICorner", creditCard).CornerRadius = UDim.new(0,12)
-
 local ccS = Instance.new("UIStroke", creditCard)
-ccS.Color = C.Pri
-ccS.Thickness = 1
-ccS.Transparency = 0.7
-ccS.Parent = creditCard
+ccS.Color = C.Pri; ccS.Thickness = 1; ccS.Transparency = 0.7; ccS.Parent = creditCard
 track(ccS, "Color")
 
 local creditLogo = Instance.new("ImageLabel", creditCard)
@@ -2663,236 +2234,50 @@ creditMade.Font = Enum.Font.Gotham
 creditMade.TextXAlignment = Enum.TextXAlignment.Center
 creditMade.ZIndex = 12
 
-Sect(tcr, "CREDITS")
-
-local cr1 = Instance.new("Frame", tcr)
-cr1.Size = UDim2.new(1,-4,0,36)
-cr1.BackgroundColor3 = C.Card
-cr1.BackgroundTransparency = 0.25
-cr1.BorderSizePixel = 0
-cr1.ZIndex = 10
-Instance.new("UICorner", cr1).CornerRadius = UDim.new(0,10)
-local cr1t = Instance.new("TextLabel", cr1)
-cr1t.Size = UDim2.new(0.5,0,1,0)
-cr1t.Position = UDim2.fromOffset(10,0)
-cr1t.BackgroundTransparency = 1
-cr1t.Text = "CREATE BY"
-cr1t.TextColor3 = C.Dim
-cr1t.TextSize = 10
-cr1t.Font = Enum.Font.GothamBold
-cr1t.TextXAlignment = Enum.TextXAlignment.Left
-cr1t.ZIndex = 11
-local cr1v = Instance.new("TextLabel", cr1)
-cr1v.Size = UDim2.new(0.5,-10,1,0)
-cr1v.Position = UDim2.new(0.5,0,0,0)
-cr1v.BackgroundTransparency = 1
-cr1v.Text = "Oc1DvHUB"
-cr1v.TextColor3 = C.Pri
-cr1v.TextSize = 12
-cr1v.Font = Enum.Font.GothamBold
-cr1v.TextXAlignment = Enum.TextXAlignment.Right
-cr1v.ZIndex = 11
-track(cr1v, "TextColor3")
-
-local cr2 = Instance.new("Frame", tcr)
-cr2.Size = UDim2.new(1,-4,0,36)
-cr2.BackgroundColor3 = C.Card
-cr2.BackgroundTransparency = 0.25
-cr2.BorderSizePixel = 0
-cr2.ZIndex = 10
-Instance.new("UICorner", cr2).CornerRadius = UDim.new(0,10)
-local cr2t = Instance.new("TextLabel", cr2)
-cr2t.Size = UDim2.new(0.5,0,1,0)
-cr2t.Position = UDim2.fromOffset(10,0)
-cr2t.BackgroundTransparency = 1
-cr2t.Text = "UI TYPE"
-cr2t.TextColor3 = C.Dim
-cr2t.TextSize = 10
-cr2t.Font = Enum.Font.GothamBold
-cr2t.TextXAlignment = Enum.TextXAlignment.Left
-cr2t.ZIndex = 11
-local cr2v = Instance.new("TextLabel", cr2)
-cr2v.Size = UDim2.new(0.5,-10,1,0)
-cr2v.Position = UDim2.new(0.5,0,0,0)
-cr2v.BackgroundTransparency = 1
-cr2v.Text = "RRFMLY UI"
-cr2v.TextColor3 = C.Cyn
-cr2v.TextSize = 12
-cr2v.Font = Enum.Font.GothamBold
-cr2v.TextXAlignment = Enum.TextXAlignment.Right
-cr2v.ZIndex = 11
-
 Sect(tcr, "SOCIAL MEDIA")
+local function mkSocBtn(name, handle, color, url)
+    local b = Instance.new("TextButton", tcr)
+    b.Size = UDim2.new(1,-4,0,36)
+    b.BackgroundColor3 = color
+    b.BackgroundTransparency = 0.15
+    b.BorderSizePixel = 0
+    b.Text = ""
+    b.AutoButtonColor = false
+    b.ZIndex = 10
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,10)
+    trackSearch(b, name)
+    local t = Instance.new("TextLabel", b)
+    t.Size = UDim2.new(0.4,0,1,0)
+    t.Position = UDim2.fromOffset(12,0)
+    t.BackgroundTransparency = 1
+    t.Text = name:upper()
+    t.TextColor3 = Color3.fromRGB(255,255,255)
+    t.TextSize = 11
+    t.Font = Enum.Font.GothamBold
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.ZIndex = 11
+    local v = Instance.new("TextLabel", b)
+    v.Size = UDim2.new(0.6,-12,1,0)
+    v.Position = UDim2.new(0.4,0,0,0)
+    v.BackgroundTransparency = 1
+    v.Text = handle
+    v.TextColor3 = Color3.fromRGB(230,230,240)
+    v.TextSize = 10
+    v.Font = Enum.Font.GothamMedium
+    v.TextXAlignment = Enum.TextXAlignment.Right
+    v.TextTruncate = Enum.TextTruncate.AtEnd
+    v.ZIndex = 11
+    b.MouseButton1Click:Connect(function()
+        sfx()
+        if setclipboard then setclipboard(url) end
+        NotifyUser(name, "Link copied!", "success")
+    end)
+end
 
-local crDiscord = Instance.new("TextButton", tcr)
-crDiscord.Size = UDim2.new(1,-4,0,36)
-crDiscord.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
-crDiscord.BackgroundTransparency = 0.15
-crDiscord.BorderSizePixel = 0
-crDiscord.Text = ""
-crDiscord.AutoButtonColor = false
-crDiscord.ZIndex = 10
-Instance.new("UICorner", crDiscord).CornerRadius = UDim.new(0,10)
-trackSearch(crDiscord, "Discord")
-local cdTitle = Instance.new("TextLabel", crDiscord)
-cdTitle.Size = UDim2.new(0.4,0,1,0)
-cdTitle.Position = UDim2.fromOffset(12,0)
-cdTitle.BackgroundTransparency = 1
-cdTitle.Text = "DISCORD"
-cdTitle.TextColor3 = Color3.fromRGB(255,255,255)
-cdTitle.TextSize = 11
-cdTitle.Font = Enum.Font.GothamBold
-cdTitle.TextXAlignment = Enum.TextXAlignment.Left
-cdTitle.ZIndex = 11
-local cdValue = Instance.new("TextLabel", crDiscord)
-cdValue.Size = UDim2.new(0.6,-12,1,0)
-cdValue.Position = UDim2.new(0.4,0,0,0)
-cdValue.BackgroundTransparency = 1
-cdValue.Text = "discord.gg/wtVKkDvyz"
-cdValue.TextColor3 = Color3.fromRGB(220,220,255)
-cdValue.TextSize = 10
-cdValue.Font = Enum.Font.GothamMedium
-cdValue.TextXAlignment = Enum.TextXAlignment.Right
-cdValue.TextTruncate = Enum.TextTruncate.AtEnd
-cdValue.ZIndex = 11
-crDiscord.MouseButton1Click:Connect(function()
-    sfx()
-    if setclipboard then setclipboard("https://discord.gg/wtVKkDvyz") end
-    NotifyUser("Discord", "Link copied!", "success")
-end)
-
-local crInsta = Instance.new("TextButton", tcr)
-crInsta.Size = UDim2.new(1,-4,0,36)
-crInsta.BackgroundColor3 = Color3.fromRGB(225, 48, 108)
-crInsta.BackgroundTransparency = 0.15
-crInsta.BorderSizePixel = 0
-crInsta.Text = ""
-crInsta.AutoButtonColor = false
-crInsta.ZIndex = 10
-Instance.new("UICorner", crInsta).CornerRadius = UDim.new(0,10)
-trackSearch(crInsta, "Instagram")
-local igTitle = Instance.new("TextLabel", crInsta)
-igTitle.Size = UDim2.new(0.4,0,1,0)
-igTitle.Position = UDim2.fromOffset(12,0)
-igTitle.BackgroundTransparency = 1
-igTitle.Text = "INSTAGRAM"
-igTitle.TextColor3 = Color3.fromRGB(255,255,255)
-igTitle.TextSize = 11
-igTitle.Font = Enum.Font.GothamBold
-igTitle.TextXAlignment = Enum.TextXAlignment.Left
-igTitle.ZIndex = 11
-local igValue = Instance.new("TextLabel", crInsta)
-igValue.Size = UDim2.new(0.6,-12,1,0)
-igValue.Position = UDim2.new(0.4,0,0,0)
-igValue.BackgroundTransparency = 1
-igValue.Text = "@mfrsyddd"
-igValue.TextColor3 = Color3.fromRGB(255,220,230)
-igValue.TextSize = 10
-igValue.Font = Enum.Font.GothamMedium
-igValue.TextXAlignment = Enum.TextXAlignment.Right
-igValue.ZIndex = 11
-crInsta.MouseButton1Click:Connect(function()
-    sfx()
-    if setclipboard then setclipboard("https://www.instagram.com/mfrsyddd?psln=NHZ2a242aXdqbXBr") end
-    NotifyUser("Instagram", "Link copied!", "success")
-end)
-
-local crTiktok = Instance.new("TextButton", tcr)
-crTiktok.Size = UDim2.new(1,-4,0,36)
-crTiktok.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-crTiktok.BackgroundTransparency = 0.1
-crTiktok.BorderSizePixel = 0
-crTiktok.Text = ""
-crTiktok.AutoButtonColor = false
-crTiktok.ZIndex = 10
-Instance.new("UICorner", crTiktok).CornerRadius = UDim.new(0,10)
-local ttStroke = Instance.new("UIStroke", crTiktok)
-ttStroke.Color = Color3.fromRGB(255, 0, 80)
-ttStroke.Thickness = 1
-ttStroke.Transparency = 0.3
-trackSearch(crTiktok, "TikTok")
-local ttTitle = Instance.new("TextLabel", crTiktok)
-ttTitle.Size = UDim2.new(0.4,0,1,0)
-ttTitle.Position = UDim2.fromOffset(12,0)
-ttTitle.BackgroundTransparency = 1
-ttTitle.Text = "TIKTOK"
-ttTitle.TextColor3 = Color3.fromRGB(255,255,255)
-ttTitle.TextSize = 11
-ttTitle.Font = Enum.Font.GothamBold
-ttTitle.TextXAlignment = Enum.TextXAlignment.Left
-ttTitle.ZIndex = 11
-local ttValue = Instance.new("TextLabel", crTiktok)
-ttValue.Size = UDim2.new(0.6,-12,1,0)
-ttValue.Position = UDim2.new(0.4,0,0,0)
-ttValue.BackgroundTransparency = 1
-ttValue.Text = "@mfrsydqt"
-ttValue.TextColor3 = Color3.fromRGB(255,180,200)
-ttValue.TextSize = 10
-ttValue.Font = Enum.Font.GothamMedium
-ttValue.TextXAlignment = Enum.TextXAlignment.Right
-ttValue.ZIndex = 11
-crTiktok.MouseButton1Click:Connect(function()
-    sfx()
-    if setclipboard then setclipboard("tiktok.com/@mfrsydqt") end
-    NotifyUser("TikTok", "Link copied!", "success")
-end)
-
-local crWA = Instance.new("TextButton", tcr)
-crWA.Size = UDim2.new(1,-4,0,36)
-crWA.BackgroundColor3 = Color3.fromRGB(37, 211, 102)
-crWA.BackgroundTransparency = 0.15
-crWA.BorderSizePixel = 0
-crWA.Text = ""
-crWA.AutoButtonColor = false
-crWA.ZIndex = 10
-Instance.new("UICorner", crWA).CornerRadius = UDim.new(0,10)
-trackSearch(crWA, "WhatsApp")
-local waTitle = Instance.new("TextLabel", crWA)
-waTitle.Size = UDim2.new(0.4,0,1,0)
-waTitle.Position = UDim2.fromOffset(12,0)
-waTitle.BackgroundTransparency = 1
-waTitle.Text = "WHATSAPP"
-waTitle.TextColor3 = Color3.fromRGB(255,255,255)
-waTitle.TextSize = 11
-waTitle.Font = Enum.Font.GothamBold
-waTitle.TextXAlignment = Enum.TextXAlignment.Left
-waTitle.ZIndex = 11
-local waValue = Instance.new("TextLabel", crWA)
-waValue.Size = UDim2.new(0.6,-12,1,0)
-waValue.Position = UDim2.new(0.4,0,0,0)
-waValue.BackgroundTransparency = 1
-waValue.Text = "Saluran WA"
-waValue.TextColor3 = Color3.fromRGB(230,255,230)
-waValue.TextSize = 10
-waValue.Font = Enum.Font.GothamMedium
-waValue.TextXAlignment = Enum.TextXAlignment.Right
-waValue.ZIndex = 11
-crWA.MouseButton1Click:Connect(function()
-    sfx()
-    if setclipboard then setclipboard("https://whatsapp.com/channel/0029VbBXI1lJZg45TdQXq129") end
-    NotifyUser("WhatsApp", "Link copied!", "success")
-end)
-
-Sect(tcr, "INFO")
-
-local infoCreditCard = Instance.new("Frame", tcr)
-infoCreditCard.Size = UDim2.new(1,-4,0,44)
-infoCreditCard.BackgroundColor3 = C.Card
-infoCreditCard.BackgroundTransparency = 0.4
-infoCreditCard.BorderSizePixel = 0
-infoCreditCard.ZIndex = 10
-Instance.new("UICorner", infoCreditCard).CornerRadius = UDim.new(0,12)
-local infoCreditTxt = Instance.new("TextLabel", infoCreditCard)
-infoCreditTxt.Size = UDim2.new(1,-20,1,0)
-infoCreditTxt.Position = UDim2.fromOffset(10,0)
-infoCreditTxt.BackgroundTransparency = 1
-infoCreditTxt.Text = "Made by Oc1DvHUB - (c) 2026"
-infoCreditTxt.TextColor3 = C.Dim
-infoCreditTxt.TextSize = 10
-infoCreditTxt.Font = Enum.Font.GothamMedium
-infoCreditTxt.TextXAlignment = Enum.TextXAlignment.Center
-infoCreditTxt.TextYAlignment = Enum.TextYAlignment.Center
-infoCreditTxt.ZIndex = 11
+mkSocBtn("Discord", "discord.gg/wtVKkDvyz", Color3.fromRGB(88, 101, 242), "https://discord.gg/wtVKkDvyz")
+mkSocBtn("Instagram", "@mfrsyddd", Color3.fromRGB(225, 48, 108), "https://www.instagram.com/mfrsyddd")
+mkSocBtn("TikTok", "@mfrsydqt", Color3.fromRGB(0,0,0), "tiktok.com/@mfrsydqt")
+mkSocBtn("WhatsApp", "Saluran WA", Color3.fromRGB(37, 211, 102), "https://whatsapp.com/channel/0029VbBXI1lJZg45TdQXq129")
 
 UIS.InputBegan:Connect(function(i, g)
     if g then return end
@@ -2901,6 +2286,6 @@ UIS.InputBegan:Connect(function(i, g)
     end
 end)
 
-Log("Halloween Edition FINAL ready", "success")
-NotifyUser("Oc1DvHUB", "Halloween Edition loaded!", "success")
-print("[Oc1DvHUB] Halloween Edition FINAL loaded ✅")
+Log("Optimized Edition loaded", "success")
+NotifyUser("Oc1DvHUB", "Optimized Edition loaded!", "success")
+print("[Oc1DvHUB] Optimized FINAL loaded ✅")
